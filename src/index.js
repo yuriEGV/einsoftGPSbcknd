@@ -34,11 +34,20 @@ const io = new Server(server, {
 app.use(helmet());
 app.use(compression());
 app.use(cors({
-  origin: [
-    process.env.SOCKET_IO_CORS_ORIGIN || 'http://localhost:3000',
-    'http://localhost:3000',
-    'http://localhost:5173',
-  ],
+  origin: (origin, callback) => {
+    const allowed = [
+      'https://einsoft-gp-sfrntnd.vercel.app', // production frontend — always allowed
+      process.env.SOCKET_IO_CORS_ORIGIN,
+      'http://localhost:3000',
+      'http://localhost:5173',
+    ].filter(Boolean);
+    // Allow requests with no origin (mobile apps, curl, Postman)
+    if (!origin || allowed.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error(`CORS: origin ${origin} not allowed`));
+    }
+  },
   credentials: true,
 }));
 app.use(express.json({ limit: '10mb' }));
