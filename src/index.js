@@ -72,11 +72,14 @@ app.use('/api/users', userRoutes);
 app.use('/api/companies', companyRoutes);
 
 // Health Check
-app.get('/api/health', (req, res) => {
+app.get('/api/health', async (req, res) => {
+  const dbStatus = mongoose.connection.readyState === 1 ? 'CONNECTED' : 'DISCONNECTED';
   res.json({
     status: 'UP',
+    database: dbStatus,
     timestamp: new Date().toISOString(),
-    version: process.env.npm_package_version || '1.0.0',
+    version: '1.0.0',
+    vercel: process.env.VERCEL === '1'
   });
 });
 

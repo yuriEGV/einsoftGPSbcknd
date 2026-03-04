@@ -3,31 +3,36 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+let cachedConnection = null;
+
 const connectDB = async () => {
+  if (cachedConnection) {
+    return cachedConnection;
+  }
+
   try {
     const uri = process.env.MONGODB_URI;
     if (!uri) {
-      console.error('❌ MONGODB_URI is not defined in environment variables');
-      return; // Don't try to connect if no URI
+      throw new Error('MONGODB_URI is not defined');
     }
+
+    // Disable buffering so errors are thrown immediately if not connected
+    mongoose.set('bufferCommands', false);
 
     const conn = await mongoose.connect(uri, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
       serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 45000,
     });
 
     console.log(`📊 MongoDB Connected: ${conn.connection.host}`);
+    cachedConnection = conn;
 
-    // Create indexes for geospatial queries
-    // We can do this without awaiting to not block the request flow if it's already connected
     createGeoIndexes().catch(err => console.error('Index creation failed:', err.message));
 
     return conn;
   } catch (error) {
     console.error(`❌ MongoDB Connection Error: ${error.message}`);
-    // Throw error instead of process.exit(1) so Vercel doesn't kill the instance immediately
     throw error;
   }
 };
