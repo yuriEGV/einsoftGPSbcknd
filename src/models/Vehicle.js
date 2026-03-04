@@ -31,6 +31,8 @@ const vehicleSchema = new mongoose.Schema({
     unique: true,
     sparse: true,
   },
+  simCardNumber: String,
+  deviceModel: String,
   location: {
     type: {
       type: String,
