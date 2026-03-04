@@ -65,6 +65,50 @@ router.post('/change-password', authenticate, async (req, res) => {
   }
 });
 
+// Admin: Update user
+router.put('/:id', authenticate, authorize('admin', 'fleet_manager'), async (req, res) => {
+  try {
+    const { name, email, role, status } = req.body;
+
+    // Check if user belongs to same company
+    const targetUser = await User.findOne({ _id: req.params.id, company: req.user.company });
+    if (!targetUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      req.params.id,
+      { name, email, role, status },
+      { new: true }
+    ).select('-password');
+
+    res.json(updatedUser);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Admin: Delete user
+router.delete('/:id', authenticate, authorize('admin'), async (req, res) => {
+  try {
+    // Check if user belongs to same company
+    const targetUser = await User.findOne({ _id: req.params.id, company: req.user.company });
+    if (!targetUser) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    // Prevent self-deletion
+    if (req.params.id === req.user.id) {
+      return res.status(400).json({ error: 'Cannot delete yourself' });
+    }
+
+    await User.findByIdAndDelete(req.params.id);
+    res.json({ message: 'User deleted successfully' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Admin: Create user
 router.post('/', authenticate, authorize('admin', 'fleet_manager'), async (req, res) => {
   try {
