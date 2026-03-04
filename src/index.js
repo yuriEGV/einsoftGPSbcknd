@@ -50,6 +50,15 @@ if (process.env.VERCEL !== '1') {
   setupSocket(io);
 }
 
+// Basic Root Route
+app.get('/', (req, res) => {
+  res.json({
+    message: 'Einsoft GPS API Backend is running',
+    healthCheck: '/api/health',
+    status: 'Operational'
+  });
+});
+
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api/vehicles', vehicleRoutes);
