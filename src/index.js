@@ -31,13 +31,15 @@ const io = new Server(server, {
 });
 
 // Middleware
-app.use(helmet());
-app.use(compression());
 app.use(cors({
-  origin: ['https://einsoft-gp-sfrntnd.vercel.app', 'http://localhost:3000', 'http://localhost:5173'],
+  origin: true,
   credentials: true,
   optionsSuccessStatus: 200
 }));
+app.use(helmet({
+  crossOriginResourcePolicy: false,
+}));
+app.use(compression());
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 app.use(requestLogger);
