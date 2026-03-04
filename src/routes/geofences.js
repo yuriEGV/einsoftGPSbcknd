@@ -77,15 +77,28 @@ router.delete('/:id', authenticate, async (req, res) => {
 router.post('/:id/check-vehicles', authenticate, async (req, res) => {
   try {
     const geofence = await Geofence.findById(req.params.id);
+    if (!geofence) return res.status(404).json({ error: 'Geofence not found' });
 
-    const vehiclesInside = await Vehicle.find({
-      company: req.user.company,
-      location: {
+    let query = { company: req.user.company };
+
+    if (geofence.geometry.type === 'Polygon') {
+      query.location = {
         $geoWithin: {
           $geometry: geofence.geometry,
         },
-      },
-    });
+      };
+    } else if (geofence.geometry.type === 'Point' && geofence.radius) {
+      // Circle detection using $centerSphere: [ [lng, lat], radius_in_radians ]
+      // Earth radius approx 6378.1 km
+      const radiusInRadians = geofence.radius / 6378100;
+      query.location = {
+        $geoWithin: {
+          $centerSphere: [geofence.geometry.coordinates, radiusInRadians],
+        },
+      };
+    }
+
+    const vehiclesInside = await Vehicle.find(query);
 
     res.json({
       geofenceId: req.params.id,

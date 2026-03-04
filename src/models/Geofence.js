@@ -15,20 +15,16 @@ const geofenceSchema = new mongoose.Schema({
   geometry: {
     type: {
       type: String,
-      enum: ['Polygon', 'Circle'],
+      enum: ['Polygon', 'Point'],
+      required: true,
       default: 'Polygon',
     },
     coordinates: {
       type: mongoose.Schema.Types.Mixed,
-      // For Polygon: [[[lng, lat], [lng, lat], ...]]
-      // For Circle: [lng, lat] with radius property
+      required: true,
     },
   },
-  radius: Number, // For circle type, in meters
-  center: {
-    type: { type: String, enum: ['Point'], default: 'Point' },
-    coordinates: [Number], // [lng, lat]
-  },
+  radius: Number, // For circle type (where geometry.type is 'Point'), in meters
   alerts: {
     onEntry: { type: Boolean, default: true },
     onExit: { type: Boolean, default: true },
