@@ -56,29 +56,18 @@ router.post('/upload', async (req, res) => {
 
     for (const gf of activeGeofences) {
       let isInside = false;
-      if (gf.geometry.type === 'Point' && gf.radius) {
-        // Point distance check
-        const radiusInDegrees = gf.radius / 111320; // Rough conversion for degrees
-        const dx = gps.longitude - gf.geometry.coordinates[0];
-        const dy = gps.latitude - gf.geometry.coordinates[1];
-        // Simple distance formula for small areas, better than complex haversine for basic check
-        isInside = Math.sqrt(dx * dx + dy * dy) <= (gf.radius / 111320);
-      } else if (gf.geometry.type === 'Polygon') {
-        // We could use a library here, but for now we'll rely on the status change 
-        // Or re-query MongoDB to see if this specific point is within the specific polygon
-        const check = await Vehicle.findOne({
-          _id: vehicle._id,
-          location: {
-            $geoWithin: { $geometry: gf.geometry }
-          }
-        });
-        isInside = !!check;
-      }
+      const point = [gps.longitude, gps.latitude];
 
-      // Detect status change (this needs a way to store previous state, 
-      // for now let's just trigger based on current location and logic)
-      // Competitive logic: Only alert if they enter/exit. 
-      // To keep it simple for now, we'll just log if they are currently violating.
+      if (gf.geometry.type === 'Point' && gf.radius) {
+        // Point distance check (1 degree ~ 111.32km)
+        const dx = (gps.longitude - gf.geometry.coordinates[0]) * Math.cos(gps.latitude * Math.PI / 180);
+        const dy = gps.latitude - gf.geometry.coordinates[1];
+        const distanceKm = Math.sqrt(dx * dx + dy * dy) * 111.32;
+        isInside = (distanceKm * 1000) <= gf.radius;
+      } else if (gf.geometry.type === 'Polygon') {
+        // Simple bounding box check for polygon or we'd need a library like turf
+        // For now, we'll keep the vehicle update logic
+      }
     }
 
     // Actualizar datos en el vehículo para reflejar la última posición/estado
@@ -94,12 +83,10 @@ router.post('/upload', async (req, res) => {
       };
       if (typeof gps.speed === 'number') {
         update.speed = gps.speed;
-
-        // Example Speeding Alert
         if (gps.speed > 120) {
-          const Alert = mongoose.model('Alert');
           await Alert.create({
             vehicle: vehicle._id,
+            company: vehicle.company,
             type: 'speeding',
             severity: 'high',
             message: `Exceso de velocidad: ${gps.speed} km/h`,
@@ -117,16 +104,24 @@ router.post('/upload', async (req, res) => {
     if (fuel && typeof fuel.level === 'number') {
       update['sensors.fuel'] = fuel.level;
     }
-    if (battery && typeof battery.voltage === 'number') {
-      update['sensors.batteryVoltage'] = battery.voltage;
+
+    const updatedVehicle = await Vehicle.findByIdAndUpdate(vehicle._id, update, { new: true });
+
+    // Emitir socket para actualización en tiempo real (si está disponible)
+    if (req.app.get('io')) {
+      req.app.get('io').emit('location_update', {
+        vehicleId: vehicle._id,
+        gps: update.location,
+        speed: update.speed,
+        heading: update.heading,
+        lastUpdate: now
+      });
     }
 
-    await Vehicle.findByIdAndUpdate(vehicle._id, update);
-
     res.status(201).json({
-      message: 'Datos recibidos y aplicados al vehículo',
-      dataId: sensorData._id,
-      vehicleId: vehicle._id,
+      message: 'Datos recibidos y aplicados',
+      vehicleId: updatedVehicle._id,
+      location: updatedVehicle.location
     });
   } catch (error) {
     res.status(500).json({ error: error.message });
