@@ -3,45 +3,48 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-let cachedConnection = null;
+let isConnecting = false;
 
 const connectDB = async () => {
-  if (cachedConnection && mongoose.connection.readyState === 1) {
-    return cachedConnection;
+  // If already connected, return the connection
+  if (mongoose.connection.readyState === 1) {
+    return mongoose.connection;
   }
 
-  // Promise for manual timeout
-  const timeout = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error('MongoDB Connection Timeout (8s)')), 8000)
-  );
+  // If currently connecting, wait for it to finish
+  if (isConnecting) {
+    while (mongoose.connection.readyState === 2) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    return mongoose.connection;
+  }
 
   try {
+    isConnecting = true;
     const uri = process.env.MONGODB_URI;
-    if (!uri) {
-      throw new Error('MONGODB_URI is not defined');
-    }
+    if (!uri) throw new Error('MONGODB_URI is not defined');
 
+    // Disable buffering because in serverless we want immediate failure over hanging
     mongoose.set('bufferCommands', false);
 
-    // Race connection vs timeout
-    const connPromise = mongoose.connect(uri, {
+    console.log('🔄 Connecting to MongoDB...');
+    await mongoose.connect(uri, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
       serverSelectionTimeoutMS: 5000,
     });
 
-    const conn = await Promise.race([connPromise, timeout]);
+    console.log('📊 MongoDB Connected');
 
-    console.log(`📊 MongoDB Connected: ${conn.connection.host}`);
-    cachedConnection = conn;
-
+    // Non-blocking index creation
     createGeoIndexes().catch(err => console.error('Index creation failed:', err.message));
 
-    return conn;
+    return mongoose.connection;
   } catch (error) {
     console.error(`❌ MongoDB Connection Error: ${error.message}`);
-    cachedConnection = null;
     throw error;
+  } finally {
+    isConnecting = false;
   }
 };
 
