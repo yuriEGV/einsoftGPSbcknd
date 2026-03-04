@@ -21,8 +21,11 @@ const connectDB = async () => {
 
   try {
     isConnecting = true;
-    const uri = process.env.MONGODB_URI;
+    let uri = process.env.MONGODB_URI;
     if (!uri) throw new Error('MONGODB_URI is not defined');
+
+    // Trim whitespace to prevent "database names cannot contain the character ' '" errors
+    uri = uri.trim();
 
     // Disable buffering because in serverless we want immediate failure over hanging
     mongoose.set('bufferCommands', false);
