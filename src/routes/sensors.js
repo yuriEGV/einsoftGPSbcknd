@@ -1,6 +1,8 @@
 import express from 'express';
+import mongoose from 'mongoose';
 import SensorData from '../models/SensorData.js';
 import Vehicle from '../models/Vehicle.js';
+import { authenticate } from '../middleware/auth.js';
 
 const router = express.Router();
 

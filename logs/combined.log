@@ -169,3 +169,13 @@
 {"level":"info","message":{"duration":"132ms","ip":"::1","method":"GET","path":"/","statusCode":304}}
 {"level":"info","message":{"duration":"133ms","ip":"::1","method":"GET","path":"/","statusCode":304}}
 {"level":"info","message":{"duration":"132ms","ip":"::1","method":"GET","path":"/","statusCode":304}}
+{"level":"info","message":{"duration":"139ms","ip":"::1","method":"GET","path":"/","statusCode":304}}
+{"level":"info","message":{"duration":"204ms","ip":"::1","method":"GET","path":"/","statusCode":304}}
+{"level":"info","message":{"duration":"131ms","ip":"::1","method":"GET","path":"/","statusCode":304}}
+{"level":"info","message":{"duration":"188ms","ip":"::1","method":"GET","path":"/","statusCode":304}}
+{"level":"info","message":{"duration":"129ms","ip":"::1","method":"GET","path":"/","statusCode":200}}
+{"level":"info","message":{"duration":"126ms","ip":"::1","method":"GET","path":"/","statusCode":304}}
+{"level":"info","message":{"duration":"188ms","ip":"::1","method":"GET","path":"/","statusCode":304}}
+{"level":"info","message":{"duration":"128ms","ip":"::1","method":"GET","path":"/","statusCode":304}}
+{"level":"info","message":{"duration":"126ms","ip":"::1","method":"GET","path":"/","statusCode":200}}
+{"level":"info","message":{"duration":"141ms","ip":"::1","method":"GET","path":"/profile","statusCode":304}}
