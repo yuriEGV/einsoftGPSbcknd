@@ -48,8 +48,10 @@ app.use(requestLogger);
 // Database Connection
 connectDB();
 
-// Socket.io Setup
-setupSocket(io);
+// Socket.io Setup — only works in persistent server mode (not Vercel serverless)
+if (process.env.VERCEL !== '1') {
+  setupSocket(io);
+}
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -78,11 +80,15 @@ app.use((req, res) => {
 // Error Handler
 app.use(errorHandler);
 
-const PORT = process.env.PORT || 5000;
-
-server.listen(PORT, () => {
-  console.log(`✅ Einsoft GPS Backend running on port ${PORT}`);
-  console.log(`🔌 WebSocket server ready for real-time updates`);
-});
+// In Vercel serverless, Vercel handles the HTTP listener itself.
+// server.listen() must NOT be called; just export the app handler.
+if (process.env.VERCEL !== '1') {
+  const PORT = process.env.PORT || 5000;
+  server.listen(PORT, () => {
+    console.log(`✅ Einsoft GPS Backend running on port ${PORT}`);
+    console.log(`🔌 WebSocket server ready for real-time updates`);
+  });
+}
 
 export { app, server, io };
+export default app;
