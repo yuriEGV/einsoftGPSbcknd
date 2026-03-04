@@ -24,6 +24,8 @@ const alertSchema = new mongoose.Schema({
       'motor_cut_activated',
       'accident_detection',
       'fatigue_detection',
+      'panic',
+      'security',
     ],
     required: true,
   },

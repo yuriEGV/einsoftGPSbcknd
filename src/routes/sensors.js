@@ -107,6 +107,19 @@ router.post('/upload', async (req, res) => {
 
     const updatedVehicle = await Vehicle.findByIdAndUpdate(vehicle._id, update, { new: true });
 
+    // --- Hardware Alarm / Panic Business Logic ---
+    if (alarmSensor?.panicButton || alarmSensor?.sos) {
+      await Alert.create({
+        vehicle: vehicle._id,
+        company: vehicle.company,
+        type: 'panic',
+        severity: 'critical',
+        message: '¡BOTÓN DE PÁNICO ACTIVADO!',
+        location: update.location,
+        triggerValue: true
+      });
+    }
+
     // Emitir socket para actualización en tiempo real (si está disponible)
     if (req.app.get('io')) {
       req.app.get('io').emit('location_update', {

@@ -146,15 +146,26 @@ router.get('/:id/history', authenticate, async (req, res) => {
 router.post('/:id/motor-cut', authenticate, async (req, res) => {
   try {
     const { activate, rules } = req.body;
+    const vehicle = await Vehicle.findOne({ _id: req.params.id, company: req.user.company });
 
-    const vehicle = await Vehicle.findByIdAndUpdate(
-      req.params.id,
-      {
-        motorCutStatus: activate,
-        motorCutRules: rules || [],
-      },
-      { new: true }
-    );
+    if (!vehicle) {
+      return res.status(404).json({ error: 'Vehicle not found' });
+    }
+
+    vehicle.motorCutStatus = activate;
+    if (rules) vehicle.motorCutRules = rules;
+    await vehicle.save();
+
+    // Create a High severity alert
+    const Alert = mongoose.model('Alert');
+    await Alert.create({
+      vehicle: vehicle._id,
+      company: vehicle.company,
+      type: 'security',
+      severity: 'high',
+      message: `Remote motor cut ${activate ? 'ACTIVATED' : 'DEACTIVATED'} by manager`,
+      location: vehicle.location
+    });
 
     // Broadcast to vehicle subscribers
     broadcastVehicleUpdate(req.io, req.params.id, {
@@ -166,6 +177,27 @@ router.post('/:id/motor-cut', authenticate, async (req, res) => {
       message: activate ? 'Motor cut activated' : 'Motor cut deactivated',
       vehicle,
     });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Spy Microphone - (Listen-in command)
+router.post('/:id/microphone', authenticate, async (req, res) => {
+  try {
+    const { activate } = req.body;
+    const vehicle = await Vehicle.findOne({ _id: req.params.id, company: req.user.company });
+
+    if (!vehicle) return res.status(404).json({ error: 'Vehicle not found' });
+
+    // In a real scenario, this would send a command to the hardware
+    // For now we log it and broadcast the state
+    broadcastVehicleUpdate(req.io, req.params.id, {
+      microphoneStatus: activate,
+      action: 'mic_command',
+    });
+
+    res.json({ message: `Microphone ${activate ? 'ON' : 'OFF'}` });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
