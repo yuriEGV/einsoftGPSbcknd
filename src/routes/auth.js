@@ -3,12 +3,14 @@ import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
 import { authenticate } from '../middleware/auth.js';
+import connectDB from '../config/database.js';
 
 const router = express.Router();
 
 // Register
 router.post('/register', async (req, res) => {
   try {
+    await connectDB();
     const { name, email, password, phone, role = 'driver' } = req.body;
 
     if (await User.findOne({ email })) {
@@ -39,6 +41,7 @@ router.post('/register', async (req, res) => {
 // Login
 router.post('/login', async (req, res) => {
   try {
+    await connectDB();
     const { email, password } = req.body;
 
     const user = await User.findOne({ email }).populate('company');
