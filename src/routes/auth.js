@@ -50,6 +50,10 @@ router.post('/login', async (req, res) => {
     user.loginAttempts = 0;
     await user.save();
 
+    if (!process.env.JWT_SECRET) {
+      throw new Error('JWT_SECRET is not defined in environment variables');
+    }
+
     const token = jwt.sign(
       {
         id: user._id,
