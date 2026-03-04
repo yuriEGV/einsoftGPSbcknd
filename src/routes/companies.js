@@ -1,3 +1,10 @@
+import express from 'express';
+import mongoose from 'mongoose';
+import Company from '../models/Company.js';
+import { authenticate, authorize } from '../middleware/auth.js';
+
+const router = express.Router();
+
 // Listar empresas (solo admin) con conteo de vehículos
 router.get('/', authenticate, authorize('admin'), async (req, res) => {
   try {

@@ -15,6 +15,8 @@ import alertRoutes from './routes/alerts.js';
 import reportRoutes from './routes/reports.js';
 import userRoutes from './routes/users.js';
 import companyRoutes from './routes/companies.js';
+import mongoose from 'mongoose';
+import './models/Alert.js'; // Ensure Alert model is registered early
 import { errorHandler } from './middleware/errorHandler.js';
 import { requestLogger } from './middleware/logger.js';
 
