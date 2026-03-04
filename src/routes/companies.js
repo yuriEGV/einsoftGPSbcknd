@@ -1,15 +1,16 @@
-import express from 'express';
-import Company from '../models/Company.js';
-import User from '../models/User.js';
-import { authenticate, authorize } from '../middleware/auth.js';
-
-const router = express.Router();
-
-// Listar empresas (solo admin)
+// Listar empresas (solo admin) con conteo de vehículos
 router.get('/', authenticate, authorize('admin'), async (req, res) => {
   try {
     const companies = await Company.find().sort({ createdAt: -1 });
-    res.json(companies);
+    const Vehicle = mongoose.model('Vehicle');
+
+    // Enriquecer con conteo de vehículos
+    const companiesWithStats = await Promise.all(companies.map(async (c) => {
+      const vehicleCount = await Vehicle.countDocuments({ company: c._id });
+      return { ...c.toObject(), vehicleCount };
+    }));
+
+    res.json(companiesWithStats);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
