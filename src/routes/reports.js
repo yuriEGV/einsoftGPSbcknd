@@ -32,7 +32,11 @@ router.get('/generate/:period', authenticate, async (req, res) => {
       }
     }
 
-    const vehicle = await Vehicle.findById(vehicleId);
+    const vehicle = await Vehicle.findOne({ _id: vehicleId, company: req.user.company });
+    if (!vehicle) {
+      return res.status(404).json({ error: 'Vehicle not found or unauthorized' });
+    }
+
     const sensorData = await SensorData.find({
       vehicle: vehicleId,
       timestamp: { $gte: start, $lte: end },
@@ -40,6 +44,7 @@ router.get('/generate/:period', authenticate, async (req, res) => {
 
     const alerts = await Alert.find({
       vehicle: vehicleId,
+      company: req.user.company,
       createdAt: { $gte: start, $lte: end },
     });
 
@@ -83,7 +88,11 @@ router.get('/generate/:period', authenticate, async (req, res) => {
 router.get('/export/pdf/:vehicleId', authenticate, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-    const vehicle = await Vehicle.findById(req.params.vehicleId);
+    const vehicle = await Vehicle.findOne({ _id: req.params.vehicleId, company: req.user.company });
+
+    if (!vehicle) {
+      return res.status(404).json({ error: 'Vehicle not found or unauthorized' });
+    }
 
     const doc = new PDFDocument();
     res.setHeader('Content-Type', 'application/pdf');

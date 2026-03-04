@@ -35,11 +35,11 @@ router.get('/', authenticate, async (req, res) => {
 // Get geofence by ID
 router.get('/:id', authenticate, async (req, res) => {
   try {
-    const geofence = await Geofence.findById(req.params.id)
+    const geofence = await Geofence.findOne({ _id: req.params.id, company: req.user.company })
       .populate('assignedVehicles');
 
     if (!geofence) {
-      return res.status(404).json({ error: 'Geofence not found' });
+      return res.status(404).json({ error: 'Geofence not found or unauthorized' });
     }
 
     res.json(geofence);
@@ -51,11 +51,15 @@ router.get('/:id', authenticate, async (req, res) => {
 // Update geofence
 router.put('/:id', authenticate, async (req, res) => {
   try {
-    const geofence = await Geofence.findByIdAndUpdate(
-      req.params.id,
+    const geofence = await Geofence.findOneAndUpdate(
+      { _id: req.params.id, company: req.user.company },
       req.body,
       { new: true }
     );
+
+    if (!geofence) {
+      return res.status(404).json({ error: 'Geofence not found or unauthorized' });
+    }
 
     res.json(geofence);
   } catch (error) {
@@ -66,7 +70,15 @@ router.put('/:id', authenticate, async (req, res) => {
 // Delete geofence
 router.delete('/:id', authenticate, async (req, res) => {
   try {
-    await Geofence.findByIdAndDelete(req.params.id);
+    const geofence = await Geofence.findOneAndDelete({
+      _id: req.params.id,
+      company: req.user.company
+    });
+
+    if (!geofence) {
+      return res.status(404).json({ error: 'Geofence not found or unauthorized' });
+    }
+
     res.json({ message: 'Geofence deleted' });
   } catch (error) {
     res.status(500).json({ error: error.message });

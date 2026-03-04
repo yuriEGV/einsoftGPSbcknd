@@ -23,17 +23,19 @@ router.get('/', authenticate, async (req, res) => {
 // Get vehicle by ID with real-time data
 router.get('/:id', authenticate, async (req, res) => {
   try {
-    const vehicle = await Vehicle.findById(req.params.id)
+    const vehicle = await Vehicle.findOne({ _id: req.params.id, company: req.user.company })
       .populate('driver', 'name email phone')
       .populate('geofences');
 
     if (!vehicle) {
-      return res.status(404).json({ error: 'Vehicle not found' });
+      return res.status(404).json({ error: 'Vehicle not found or unauthorized' });
     }
 
     // Get latest sensor data
-    const latestSensorData = await SensorData.findOne({ vehicle: vehicle._id })
-      .sort({ timestamp: -1 });
+    const latestSensorData = await SensorData.findOne({
+      vehicle: vehicle._id,
+      // Optional: Add deviceIMEI check if needed, but vehicle check is enough since vehicle is company-scoped
+    }).sort({ timestamp: -1 });
 
     res.json({
       ...vehicle.toObject(),
@@ -62,11 +64,15 @@ router.post('/', authenticate, async (req, res) => {
 // Update vehicle
 router.put('/:id', authenticate, async (req, res) => {
   try {
-    const vehicle = await Vehicle.findByIdAndUpdate(
-      req.params.id,
+    const vehicle = await Vehicle.findOneAndUpdate(
+      { _id: req.params.id, company: req.user.company },
       req.body,
       { new: true }
     );
+
+    if (!vehicle) {
+      return res.status(404).json({ error: 'Vehicle not found or unauthorized' });
+    }
 
     res.json(vehicle);
   } catch (error) {
@@ -83,6 +89,12 @@ router.post('/:id/link-device', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'deviceIMEI es requerido' });
     }
 
+    // Asegurar que el vehículo existe y pertenece a la empresa antes de seguir
+    const checkVehicle = await Vehicle.findOne({ _id: req.params.id, company: req.user.company });
+    if (!checkVehicle) {
+      return res.status(404).json({ error: 'Vehículo no encontrado o no autorizado' });
+    }
+
     // Asegurar que un IMEI no quede en dos vehículos
     await Vehicle.updateMany(
       { deviceIMEI, _id: { $ne: req.params.id } },
@@ -94,10 +106,6 @@ router.post('/:id/link-device', authenticate, async (req, res) => {
       { deviceIMEI, simCardNumber, deviceModel },
       { new: true },
     );
-
-    if (!vehicle) {
-      return res.status(404).json({ error: 'Vehículo no encontrado' });
-    }
 
     res.json({
       message: 'Dispositivo vinculado correctamente',
@@ -112,6 +120,13 @@ router.post('/:id/link-device', authenticate, async (req, res) => {
 router.get('/:id/history', authenticate, async (req, res) => {
   try {
     const { hours = 24 } = req.query;
+
+    // Check ownership first
+    const vehicle = await Vehicle.findOne({ _id: req.params.id, company: req.user.company });
+    if (!vehicle) {
+      return res.status(404).json({ error: 'Vehicle not found or unauthorized' });
+    }
+
     const startTime = new Date(Date.now() - hours * 60 * 60 * 1000);
 
     const history = await SensorData.find({

@@ -37,10 +37,18 @@ router.get('/', authenticate, async (req, res) => {
 router.get('/vehicle/:vehicleId', authenticate, async (req, res) => {
   try {
     const { days = 7 } = req.query;
+
+    // Check vehicle ownership
+    const vehicle = await Vehicle.findOne({ _id: req.params.vehicleId, company: req.user.company });
+    if (!vehicle) {
+      return res.status(404).json({ error: 'Vehicle not found or unauthorized' });
+    }
+
     const startTime = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
     const alerts = await Alert.find({
       vehicle: req.params.vehicleId,
+      company: req.user.company,
       createdAt: { $gte: startTime },
     })
       .sort({ createdAt: -1 });
@@ -82,6 +90,7 @@ router.get('/stats/summary', authenticate, async (req, res) => {
     const stats = await Alert.aggregate([
       {
         $match: {
+          company: mongoose.Types.ObjectId(req.user.company),
           createdAt: { $gte: startTime },
         },
       },
@@ -95,10 +104,12 @@ router.get('/stats/summary', authenticate, async (req, res) => {
     ]);
 
     const totalAlerts = await Alert.countDocuments({
+      company: req.user.company,
       createdAt: { $gte: startTime },
     });
 
     const unacknowledged = await Alert.countDocuments({
+      company: req.user.company,
       acknowledged: false,
     });
 

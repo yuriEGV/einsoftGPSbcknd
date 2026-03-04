@@ -89,7 +89,7 @@ router.put('/:id', authenticate, authorize('admin', 'fleet_manager'), async (req
 });
 
 // Admin: Delete user
-router.delete('/:id', authenticate, authorize('admin'), async (req, res) => {
+router.delete('/:id', authenticate, authorize('admin', 'fleet_manager'), async (req, res) => {
   try {
     // Check if user belongs to same company
     const targetUser = await User.findOne({ _id: req.params.id, company: req.user.company });
