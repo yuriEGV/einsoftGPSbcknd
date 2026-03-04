@@ -121,8 +121,8 @@ router.post('/upload', async (req, res) => {
     }
 
     // Emitir socket para actualización en tiempo real (si está disponible)
-    if (req.app.get('io')) {
-      req.app.get('io').emit('location_update', {
+    if (req.io) {
+      req.io.emit('location_update', {
         vehicleId: vehicle._id,
         gps: update.location,
         speed: update.speed,

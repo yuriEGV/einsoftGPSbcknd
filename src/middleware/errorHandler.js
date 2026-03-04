@@ -14,9 +14,11 @@ export const errorHandler = (err, req, res, next) => {
     'http://localhost:5173'
   ];
 
-  if (origin && allowedOrigins.includes(origin)) {
+  if (origin && (allowedOrigins.includes(origin) || origin.endsWith('.vercel.app'))) {
     res.header('Access-Control-Allow-Origin', origin);
     res.header('Access-Control-Allow-Credentials', 'true');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
   }
 
   const statusCode = err.statusCode || 500;

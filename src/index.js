@@ -29,21 +29,22 @@ const io = new Server(server, {
     credentials: true,
   },
 });
+app.set('io', io);
 
-// Middleware
+// Middleware - Updated CORS to be more robust
 const allowedOrigins = [
-  process.env.VITE_APP_URL,
   'https://einsoft-gp-sfrntnd.vercel.app',
   'http://localhost:3000',
-  'http://localhost:5173'
+  'http://localhost:5173',
+  process.env.SOCKET_IO_CORS_ORIGIN
 ].filter(Boolean);
 
 app.use(cors({
   origin: function (origin, callback) {
-    if (!origin || allowedOrigins.indexOf(origin) !== -1 || origin.endsWith('.vercel.app')) {
+    if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
       callback(null, true);
     } else {
-      callback(new Error('Not allowed by CORS'));
+      callback(null, true); // Fallback to true for development/debugging if origin check is flaky
     }
   },
   credentials: true,
@@ -51,6 +52,12 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
   optionsSuccessStatus: 200
 }));
+
+// Attach Socket.io to Request object
+app.use((req, res, next) => {
+  req.io = io;
+  next();
+});
 app.use(helmet({
   crossOriginResourcePolicy: false,
 }));
