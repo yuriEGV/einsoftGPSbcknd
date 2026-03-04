@@ -44,10 +44,20 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 app.use(requestLogger);
 
-// Database Connection
-connectDB();
+// Middleware for DB connection - Ensures DB is ready for all API routes
+const dbMiddleware = async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (error) {
+    next(error);
+  }
+};
 
-// Socket.io Setup — only works in persistent server mode (not Vercel serverless)
+// Database check removed from top level (Vercel optimization)
+// connectDB(); 
+
+// Socket.io Setup — only works in persistent server mode
 if (process.env.VERCEL !== '1') {
   setupSocket(io);
 }
@@ -60,6 +70,9 @@ app.get('/', (req, res) => {
     status: 'Operational'
   });
 });
+
+// Apply DB Middleware to all /api routes
+app.use('/api', dbMiddleware);
 
 // Routes
 app.use('/api/auth', authRoutes);
