@@ -45,6 +45,40 @@ router.post('/upload', async (req, res) => {
 
     await sensorData.save();
 
+    // --- Geofence and Alert Logic ---
+    const activeGeofences = await Geofence.find({
+      company: vehicle.company,
+      active: true,
+      assignedVehicles: vehicle._id
+    });
+
+    for (const gf of activeGeofences) {
+      let isInside = false;
+      if (gf.geometry.type === 'Point' && gf.radius) {
+        // Point distance check
+        const radiusInDegrees = gf.radius / 111320; // Rough conversion for degrees
+        const dx = gps.longitude - gf.geometry.coordinates[0];
+        const dy = gps.latitude - gf.geometry.coordinates[1];
+        // Simple distance formula for small areas, better than complex haversine for basic check
+        isInside = Math.sqrt(dx * dx + dy * dy) <= (gf.radius / 111320);
+      } else if (gf.geometry.type === 'Polygon') {
+        // We could use a library here, but for now we'll rely on the status change 
+        // Or re-query MongoDB to see if this specific point is within the specific polygon
+        const check = await Vehicle.findOne({
+          _id: vehicle._id,
+          location: {
+            $geoWithin: { $geometry: gf.geometry }
+          }
+        });
+        isInside = !!check;
+      }
+
+      // Detect status change (this needs a way to store previous state, 
+      // for now let's just trigger based on current location and logic)
+      // Competitive logic: Only alert if they enter/exit. 
+      // To keep it simple for now, we'll just log if they are currently violating.
+    }
+
     // Actualizar datos en el vehículo para reflejar la última posición/estado
     const update = { lastUpdate: now };
     if (gps) {
@@ -58,6 +92,20 @@ router.post('/upload', async (req, res) => {
       };
       if (typeof gps.speed === 'number') {
         update.speed = gps.speed;
+
+        // Example Speeding Alert
+        if (gps.speed > 120) {
+          const Alert = mongoose.model('Alert');
+          await Alert.create({
+            vehicle: vehicle._id,
+            type: 'speeding',
+            severity: 'high',
+            message: `Exceso de velocidad: ${gps.speed} km/h`,
+            location: { latitude: gps.latitude, longitude: gps.longitude },
+            triggerValue: gps.speed,
+            threshold: 120
+          });
+        }
       }
       if (typeof gps.heading === 'number') {
         update.heading = gps.heading;
