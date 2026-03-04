@@ -1,5 +1,7 @@
 import express from 'express';
+import mongoose from 'mongoose';
 import Alert from '../models/Alert.js';
+import Vehicle from '../models/Vehicle.js';
 import { authenticate } from '../middleware/auth.js';
 
 const router = express.Router();
