@@ -1,6 +1,6 @@
 import express from 'express';
 import PDFDocument from 'pdfkit';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, authorize } from '../middleware/auth.js';
 import SensorData from '../models/SensorData.js';
 import Vehicle from '../models/Vehicle.js';
 import Alert from '../models/Alert.js';
@@ -8,7 +8,7 @@ import Alert from '../models/Alert.js';
 const router = express.Router();
 
 // Generate daily/weekly/monthly report
-router.get('/generate/:period', authenticate, async (req, res) => {
+router.get('/generate/:period', authenticate, authorize('admin', 'fleet_manager'), async (req, res) => {
   try {
     const { vehicleId, startDate, endDate } = req.query;
     const { period } = req.params;
@@ -94,7 +94,7 @@ router.get('/generate/:period', authenticate, async (req, res) => {
 });
 
 // Export report as PDF
-router.get('/export/pdf/:vehicleId', authenticate, async (req, res) => {
+router.get('/export/pdf/:vehicleId', authenticate, authorize('admin', 'fleet_manager'), async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
     let vehicleFilter = { _id: req.params.vehicleId };

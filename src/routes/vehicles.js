@@ -2,13 +2,13 @@ import express from 'express';
 import mongoose from 'mongoose';
 import Vehicle from '../models/Vehicle.js';
 import SensorData from '../models/SensorData.js';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, authorize } from '../middleware/auth.js';
 import { broadcastVehicleUpdate } from '../socket/index.js';
 
 const router = express.Router();
 
 // Get all vehicles (Admin: all, Others: by company)
-router.get('/', authenticate, async (req, res) => {
+router.get('/', authenticate, authorize('admin', 'fleet_manager'), async (req, res) => {
   try {
     let filter = {};
     if (req.user.role !== 'admin') {
@@ -38,7 +38,7 @@ router.get('/', authenticate, async (req, res) => {
 });
 
 // Get vehicle by ID (Admin: bypass company check)
-router.get('/:id', authenticate, async (req, res) => {
+router.get('/:id', authenticate, authorize('admin', 'fleet_manager'), async (req, res) => {
   try {
     let filter = { _id: req.params.id };
     if (req.user.role !== 'admin') {
@@ -69,7 +69,7 @@ router.get('/:id', authenticate, async (req, res) => {
 });
 
 // Create vehicle (Admin: allowed company assignment)
-router.post('/', authenticate, async (req, res) => {
+router.post('/', authenticate, authorize('admin', 'fleet_manager'), async (req, res) => {
   try {
     const { companyId, ...vehicleData } = req.body;
     const vehicle = new Vehicle({
@@ -85,7 +85,7 @@ router.post('/', authenticate, async (req, res) => {
 });
 
 // Update vehicle (Admin: allowed company assignment)
-router.put('/:id', authenticate, async (req, res) => {
+router.put('/:id', authenticate, authorize('admin', 'fleet_manager'), async (req, res) => {
   try {
     const { companyId, ...updateData } = req.body;
     let filter = { _id: req.params.id };
@@ -110,7 +110,7 @@ router.put('/:id', authenticate, async (req, res) => {
 });
 
 // Vincular / actualizar dispositivo (IMEI, SIM, Modelo) al vehículo
-router.post('/:id/link-device', authenticate, async (req, res) => {
+router.post('/:id/link-device', authenticate, authorize('admin', 'fleet_manager'), async (req, res) => {
   try {
     const { deviceIMEI, simCardNumber, deviceModel, driverId } = req.body;
 

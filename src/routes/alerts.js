@@ -2,12 +2,12 @@ import express from 'express';
 import mongoose from 'mongoose';
 import Alert from '../models/Alert.js';
 import Vehicle from '../models/Vehicle.js';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, authorize } from '../middleware/auth.js';
 
 const router = express.Router();
 
 // Get all alerts for company
-router.get('/', authenticate, async (req, res) => {
+router.get('/', authenticate, authorize('admin', 'fleet_manager'), async (req, res) => {
   try {
     const { status = 'all', severity = 'all', limit = 50 } = req.query;
 
