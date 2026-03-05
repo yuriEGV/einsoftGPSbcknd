@@ -147,8 +147,12 @@ router.get('/:id/history', authenticate, async (req, res) => {
   try {
     const { hours = 24 } = req.query;
 
-    // Check ownership first
-    const vehicle = await Vehicle.findOne({ _id: req.params.id, company: req.user.company });
+    // Check ownership first (skip if Admin)
+    let filter = { _id: req.params.id };
+    if (req.user.role !== 'admin') {
+      filter.company = req.user.company;
+    }
+    const vehicle = await Vehicle.findOne(filter);
     if (!vehicle) {
       return res.status(404).json({ error: 'Vehicle not found or unauthorized' });
     }
@@ -172,7 +176,11 @@ router.get('/:id/history', authenticate, async (req, res) => {
 router.post('/:id/motor-cut', authenticate, async (req, res) => {
   try {
     const { activate, rules } = req.body;
-    const vehicle = await Vehicle.findOne({ _id: req.params.id, company: req.user.company });
+    let filter = { _id: req.params.id };
+    if (req.user.role !== 'admin') {
+      filter.company = req.user.company;
+    }
+    const vehicle = await Vehicle.findOne(filter);
 
     if (!vehicle) {
       return res.status(404).json({ error: 'Vehicle not found' });
@@ -212,7 +220,11 @@ router.post('/:id/motor-cut', authenticate, async (req, res) => {
 router.post('/:id/microphone', authenticate, async (req, res) => {
   try {
     const { activate } = req.body;
-    const vehicle = await Vehicle.findOne({ _id: req.params.id, company: req.user.company });
+    let filter = { _id: req.params.id };
+    if (req.user.role !== 'admin') {
+      filter.company = req.user.company;
+    }
+    const vehicle = await Vehicle.findOne(filter);
 
     if (!vehicle) return res.status(404).json({ error: 'Vehicle not found' });
 
