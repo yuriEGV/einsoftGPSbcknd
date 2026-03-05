@@ -127,7 +127,11 @@ app.use((req, res) => {
 app.use(errorHandler);
 
 // In Vercel serverless, Vercel handles the HTTP listener itself.
-// server.listen() must NOT be called; just export the app handler.
+// However, we can manually route Socket.IO requests to the engine to avoid 404s
+app.all('/socket.io/*', (req, res) => {
+  io.engine.handleRequest(req, res);
+});
+
 if (process.env.VERCEL !== '1') {
   const PORT = process.env.PORT || 5000;
   server.listen(PORT, () => {

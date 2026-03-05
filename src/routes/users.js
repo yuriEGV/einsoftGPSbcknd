@@ -139,6 +139,13 @@ router.post('/', authenticate, authorize('admin', 'fleet_manager'), async (req, 
     await user.save();
     res.status(201).json({ message: 'User created', userId: user._id });
   } catch (error) {
+    if (error.name === 'ValidationError') {
+      const messages = Object.values(error.errors).map(val => val.message);
+      return res.status(400).json({ error: messages.join('. ') });
+    }
+    if (error.code === 11000) {
+      return res.status(400).json({ error: 'El correo electrónico ya está registrado' });
+    }
     res.status(500).json({ error: error.message });
   }
 });
