@@ -13,15 +13,19 @@ export const authenticate = async (req, res, next) => {
     req.user = decoded;
 
     const user = await User.findById(decoded.id);
-    if (!user || user.status === 'suspended') {
-      return res.status(401).json({ error: 'User not found or suspended' });
+    if (!user) {
+      return res.status(401).json({ error: 'User session invalid' });
+    }
+
+    if (user.status === 'suspended') {
+      return res.status(403).json({ error: 'User account is suspended' });
     }
 
     req.userObj = user;
 
     // Asegurarnos de que siempre haya company en req.user para los filtros
-    if (!req.user.company && user.company) {
-      req.user.company = user.company;
+    if (user.company) {
+      req.user.company = user.company.toString();
     }
     next();
   } catch (error) {

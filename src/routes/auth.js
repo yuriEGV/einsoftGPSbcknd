@@ -64,7 +64,7 @@ router.post('/login', async (req, res) => {
         id: user._id,
         email: user.email,
         role: user.role,
-        company: user.company?._id,
+        company: user.company?._id || user.company, // Ensure ID is present
       },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRE || '7d' }
