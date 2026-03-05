@@ -32,7 +32,12 @@ router.get('/generate/:period', authenticate, async (req, res) => {
       }
     }
 
-    const vehicle = await Vehicle.findOne({ _id: vehicleId, company: req.user.company });
+    let vehicleFilter = { _id: vehicleId };
+    if (req.user.role !== 'admin') {
+      vehicleFilter.company = req.user.company;
+    }
+
+    const vehicle = await Vehicle.findOne(vehicleFilter);
     if (!vehicle) {
       return res.status(404).json({ error: 'Vehicle not found or unauthorized' });
     }
@@ -42,11 +47,15 @@ router.get('/generate/:period', authenticate, async (req, res) => {
       timestamp: { $gte: start, $lte: end },
     }).sort({ timestamp: 1 });
 
-    const alerts = await Alert.find({
+    let alertFilter = {
       vehicle: vehicleId,
-      company: req.user.company,
       createdAt: { $gte: start, $lte: end },
-    });
+    };
+    if (req.user.role !== 'admin') {
+      alertFilter.company = req.user.company;
+    }
+
+    const alerts = await Alert.find(alertFilter);
 
     // Calculate metrics
     const totalDistance = sensorData.reduce((sum, data) => {
@@ -88,7 +97,12 @@ router.get('/generate/:period', authenticate, async (req, res) => {
 router.get('/export/pdf/:vehicleId', authenticate, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-    const vehicle = await Vehicle.findOne({ _id: req.params.vehicleId, company: req.user.company });
+    let vehicleFilter = { _id: req.params.vehicleId };
+    if (req.user.role !== 'admin') {
+      vehicleFilter.company = req.user.company;
+    }
+
+    const vehicle = await Vehicle.findOne(vehicleFilter);
 
     if (!vehicle) {
       return res.status(404).json({ error: 'Vehicle not found or unauthorized' });

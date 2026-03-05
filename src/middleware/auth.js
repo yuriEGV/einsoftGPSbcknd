@@ -14,7 +14,7 @@ export const authenticate = async (req, res, next) => {
 
     const user = await User.findById(decoded.id);
     if (!user || user.status === 'suspended') {
-      return res.status(403).json({ error: 'User not found or suspended' });
+      return res.status(401).json({ error: 'User not found or suspended' });
     }
 
     req.userObj = user;

@@ -81,10 +81,8 @@ const dbMiddleware = async (req, res, next) => {
 // Database check removed from top level (Vercel optimization)
 // connectDB(); 
 
-// Socket.io Setup — only works in persistent server mode
-if (process.env.VERCEL !== '1') {
-  setupSocket(io);
-}
+// Socket.io Setup
+setupSocket(io);
 
 // Basic Root Route
 app.get('/', (req, res) => {
