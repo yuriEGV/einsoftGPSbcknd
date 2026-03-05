@@ -281,6 +281,9 @@ router.get('/:id/stats', authenticate, async (req, res) => {
           },
           avgFuelLevel: { $avg: '$fuel.level' },
           avgEngineTemp: { $avg: '$temperature.ambient' },
+          drivingDurationMinutes: {
+            $sum: { $cond: [{ $gt: ['$gps.speed', 0] }, 1, 0] }
+          }
         },
       },
     ]);
