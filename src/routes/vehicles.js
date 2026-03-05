@@ -15,12 +15,23 @@ router.get('/', authenticate, async (req, res) => {
       filter.company = req.user.company;
     }
 
+    const now = new Date();
     const vehicles = await Vehicle.find(filter)
       .populate('driver', 'name email phone')
       .populate('company', 'name')
       .sort({ lastUpdate: -1 });
 
-    res.json(vehicles);
+    // Dynamic status update for offline vehicles (5 min threshold)
+    const processedVehicles = vehicles.map(v => {
+      const obj = v.toObject();
+      const lastUpdate = v.lastUpdate || v.location?.timestamp;
+      if (lastUpdate && (now - new Date(lastUpdate)) > 5 * 60 * 1000) {
+        obj.status = 'offline';
+      }
+      return obj;
+    });
+
+    res.json(processedVehicles);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -85,6 +96,8 @@ router.put('/:id', authenticate, async (req, res) => {
     if (req.user.role === 'admin' && companyId) {
       updateData.company = companyId;
     }
+
+    const vehicle = await Vehicle.findOneAndUpdate(filter, updateData, { new: true });
 
     if (!vehicle) {
       return res.status(404).json({ error: 'Vehicle not found or unauthorized' });

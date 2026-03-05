@@ -5,6 +5,7 @@ import Vehicle from '../models/Vehicle.js';
 import Geofence from '../models/Geofence.js';
 import Alert from '../models/Alert.js';
 import { authenticate } from '../middleware/auth.js';
+import { broadcastAlert } from '../socket/index.js';
 
 const router = express.Router();
 
@@ -105,7 +106,6 @@ router.post('/upload', async (req, res) => {
 
           // Broadcast speeding alert
           if (req.io) {
-            const { broadcastAlert } = await import('../socket/index.js');
             broadcastAlert(req.io, vehicle._id, vehicle.company, alert);
           }
         }
