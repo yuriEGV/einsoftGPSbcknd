@@ -11,10 +11,15 @@ const router = express.Router();
 router.get('/', authenticate, async (req, res) => {
   try {
     let filter = {};
-    if (req.user.role === 'driver') {
-      filter.driver = req.user.id;
-    } else if (req.user.role !== 'admin') {
+    if (req.user.company) {
+      // If user is tied to a company, EVERYTHING they see must be filtered by it.
       filter.company = req.user.company;
+      if (req.user.role === 'driver') {
+        filter.driver = req.user.id;
+      }
+    } else if (req.user.role !== 'admin') {
+      // Logic for users without company context but non-admin (legacy check)
+      return res.status(403).json({ error: 'Unauthorized: No company context found' });
     }
 
     const now = new Date();
@@ -43,10 +48,13 @@ router.get('/', authenticate, async (req, res) => {
 router.get('/:id', authenticate, async (req, res) => {
   try {
     let filter = { _id: req.params.id };
-    if (req.user.role === 'driver') {
-      filter.driver = req.user.id;
-    } else if (req.user.role !== 'admin') {
+    if (req.user.company) {
       filter.company = req.user.company;
+      if (req.user.role === 'driver') {
+        filter.driver = req.user.id;
+      }
+    } else if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Unauthorized: No company context' });
     }
 
     const vehicle = await Vehicle.findOne(filter)
@@ -78,7 +86,7 @@ router.post('/', authenticate, authorize('admin', 'fleet_manager'), async (req, 
     const { companyId, ...vehicleData } = req.body;
     const vehicle = new Vehicle({
       ...vehicleData,
-      company: req.user.role === 'admin' ? companyId : req.user.company,
+      company: req.user.company || companyId,
     });
 
     await vehicle.save();

@@ -9,8 +9,10 @@ const router = express.Router();
 router.get('/drivers', authenticate, async (req, res) => {
   try {
     let filter = { role: 'driver' };
-    if (req.user.role !== 'admin') {
+    if (req.user.company) {
       filter.company = req.user.company;
+    } else if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Unauthorized: No company context' });
     }
 
     const drivers = await User.find(filter)
@@ -27,8 +29,10 @@ router.get('/drivers', authenticate, async (req, res) => {
 router.get('/', authenticate, async (req, res) => {
   try {
     let filter = {};
-    if (req.user.role !== 'admin') {
+    if (req.user.company) {
       filter.company = req.user.company;
+    } else if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Unauthorized: No company context' });
     }
 
     const users = await User.find(filter)
@@ -157,7 +161,7 @@ router.post('/', authenticate, authorize('admin', 'fleet_manager'), async (req, 
       email: email.toLowerCase(),
       password: await bcrypt.hash(password, 10),
       role,
-      company: req.user.role === 'admin' ? (companyId || null) : req.user.company,
+      company: req.user.company || companyId,
     });
 
     await user.save();

@@ -23,10 +23,15 @@ export const authenticate = async (req, res, next) => {
 
     req.userObj = user;
 
-    // Asegurarnos de que siempre haya company en req.user para los filtros
-    if (user.company) {
-      req.user.company = user.company.toString();
-    }
+    // Strict multi-tenancy context:
+    // We attach the verified company ID from the DB to req.user
+    // This is the source of truth for all subsequent route filters.
+    req.user = {
+      ...decoded,
+      company: user.company ? user.company.toString() : null,
+      role: user.role
+    };
+
     next();
   } catch (error) {
     return res.status(401).json({ error: 'Invalid or expired token' });

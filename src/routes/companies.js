@@ -5,8 +5,18 @@ import { authenticate, authorize } from '../middleware/auth.js';
 
 const router = express.Router();
 
-// Listar empresas (solo admin) con conteo de vehículos
-router.get('/', authenticate, authorize('admin'), async (req, res) => {
+// Helper middleware to ensure user is NOT assigned to a company (Super Admin check)
+const superAdminOnly = (req, res, next) => {
+  if (req.user.company) {
+    return res.status(403).json({
+      error: 'Acceso denegado. Los gestores de empresa no pueden administrar el catálogo global de clientes.'
+    });
+  }
+  next();
+};
+
+// Listar empresas (solo super-admin) con conteo de vehículos
+router.get('/', authenticate, authorize('admin'), superAdminOnly, async (req, res) => {
   try {
     const companies = await Company.find().sort({ createdAt: -1 });
     const Vehicle = mongoose.model('Vehicle');
@@ -23,8 +33,8 @@ router.get('/', authenticate, authorize('admin'), async (req, res) => {
   }
 });
 
-// Obtener empresa por id
-router.get('/:id', authenticate, authorize('admin'), async (req, res) => {
+// Obtener empresa por id (solo super-admin)
+router.get('/:id', authenticate, authorize('admin'), superAdminOnly, async (req, res) => {
   try {
     const company = await Company.findById(req.params.id);
     if (!company) {
@@ -36,8 +46,9 @@ router.get('/:id', authenticate, authorize('admin'), async (req, res) => {
   }
 });
 
-// Crear empresa y, opcionalmente, usuario admin asociado
-router.post('/', authenticate, authorize('admin'), async (req, res) => {
+// Crear empresa (solo super-admin)
+router.post('/', authenticate, authorize('admin'), superAdminOnly, async (req, res) => {
+  // ... rest of the code stays same but with superAdminOnly protection
   try {
     const {
       name,
@@ -65,8 +76,8 @@ router.post('/', authenticate, authorize('admin'), async (req, res) => {
   }
 });
 
-// Actualizar empresa
-router.put('/:id', authenticate, authorize('admin'), async (req, res) => {
+// Actualizar empresa (solo super-admin)
+router.put('/:id', authenticate, authorize('admin'), superAdminOnly, async (req, res) => {
   try {
     const company = await Company.findByIdAndUpdate(
       req.params.id,
@@ -82,8 +93,8 @@ router.put('/:id', authenticate, authorize('admin'), async (req, res) => {
   }
 });
 
-// Desactivar / eliminar empresa (soft delete)
-router.delete('/:id', authenticate, authorize('admin'), async (req, res) => {
+// Desactivar / eliminar empresa (soft delete) (solo super-admin)
+router.delete('/:id', authenticate, authorize('admin'), superAdminOnly, async (req, res) => {
   try {
     const company = await Company.findByIdAndUpdate(
       req.params.id,
