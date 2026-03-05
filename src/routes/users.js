@@ -8,7 +8,13 @@ const router = express.Router();
 // Get all users in company
 router.get('/', authenticate, async (req, res) => {
   try {
-    const users = await User.find({ company: req.user.company })
+    let filter = {};
+    if (req.user.role !== 'admin') {
+      filter.company = req.user.company;
+    }
+
+    const users = await User.find(filter)
+      .populate('company', 'name')
       .select('-password')
       .sort({ createdAt: -1 });
 

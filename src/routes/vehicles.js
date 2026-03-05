@@ -21,11 +21,11 @@ router.get('/', authenticate, async (req, res) => {
       .populate('company', 'name')
       .sort({ lastUpdate: -1 });
 
-    // Dynamic status update for offline vehicles (5 min threshold)
+    // Dynamic status update for offline vehicles (1 min threshold)
     const processedVehicles = vehicles.map(v => {
       const obj = v.toObject();
       const lastUpdate = v.lastUpdate || v.location?.timestamp;
-      if (lastUpdate && (now - new Date(lastUpdate)) > 5 * 60 * 1000) {
+      if (lastUpdate && (now - new Date(lastUpdate)) > 1 * 60 * 1000) {
         obj.status = 'offline';
       }
       return obj;
