@@ -7,11 +7,17 @@ import { broadcastVehicleUpdate } from '../socket/index.js';
 
 const router = express.Router();
 
-// Get all vehicles for a company
+// Get all vehicles (Admin: all, Others: by company)
 router.get('/', authenticate, async (req, res) => {
   try {
-    const vehicles = await Vehicle.find({ company: req.user.company })
+    let filter = {};
+    if (req.user.role !== 'admin') {
+      filter.company = req.user.company;
+    }
+
+    const vehicles = await Vehicle.find(filter)
       .populate('driver', 'name email phone')
+      .populate('company', 'name')
       .sort({ lastUpdate: -1 });
 
     res.json(vehicles);
@@ -20,11 +26,17 @@ router.get('/', authenticate, async (req, res) => {
   }
 });
 
-// Get vehicle by ID with real-time data
+// Get vehicle by ID (Admin: bypass company check)
 router.get('/:id', authenticate, async (req, res) => {
   try {
-    const vehicle = await Vehicle.findOne({ _id: req.params.id, company: req.user.company })
+    let filter = { _id: req.params.id };
+    if (req.user.role !== 'admin') {
+      filter.company = req.user.company;
+    }
+
+    const vehicle = await Vehicle.findOne(filter)
       .populate('driver', 'name email phone')
+      .populate('company', 'name')
       .populate('geofences');
 
     if (!vehicle) {
@@ -34,7 +46,6 @@ router.get('/:id', authenticate, async (req, res) => {
     // Get latest sensor data
     const latestSensorData = await SensorData.findOne({
       vehicle: vehicle._id,
-      // Optional: Add deviceIMEI check if needed, but vehicle check is enough since vehicle is company-scoped
     }).sort({ timestamp: -1 });
 
     res.json({
@@ -46,12 +57,13 @@ router.get('/:id', authenticate, async (req, res) => {
   }
 });
 
-// Create vehicle
+// Create vehicle (Admin: allowed company assignment)
 router.post('/', authenticate, async (req, res) => {
   try {
+    const { companyId, ...vehicleData } = req.body;
     const vehicle = new Vehicle({
-      ...req.body,
-      company: req.user.company,
+      ...vehicleData,
+      company: req.user.role === 'admin' ? companyId : req.user.company,
     });
 
     await vehicle.save();
@@ -61,14 +73,18 @@ router.post('/', authenticate, async (req, res) => {
   }
 });
 
-// Update vehicle
+// Update vehicle (Admin: allowed company assignment)
 router.put('/:id', authenticate, async (req, res) => {
   try {
-    const vehicle = await Vehicle.findOneAndUpdate(
-      { _id: req.params.id, company: req.user.company },
-      req.body,
-      { new: true }
-    );
+    const { companyId, ...updateData } = req.body;
+    let filter = { _id: req.params.id };
+    if (req.user.role !== 'admin') {
+      filter.company = req.user.company;
+    }
+
+    if (req.user.role === 'admin' && companyId) {
+      updateData.company = companyId;
+    }
 
     if (!vehicle) {
       return res.status(404).json({ error: 'Vehicle not found or unauthorized' });
@@ -89,8 +105,13 @@ router.post('/:id/link-device', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'deviceIMEI es requerido' });
     }
 
-    // Asegurar que el vehículo existe y pertenece a la empresa antes de seguir
-    const checkVehicle = await Vehicle.findOne({ _id: req.params.id, company: req.user.company });
+    // Asegurar que el vehículo existe y pertenece a la empresa (o es Admin) antes de seguir
+    let filter = { _id: req.params.id };
+    if (req.user.role !== 'admin') {
+      filter.company = req.user.company;
+    }
+
+    const checkVehicle = await Vehicle.findOne(filter);
     if (!checkVehicle) {
       return res.status(404).json({ error: 'Vehículo no encontrado o no autorizado' });
     }

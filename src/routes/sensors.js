@@ -130,7 +130,7 @@ router.post('/upload', async (req, res) => {
     const updatedVehicle = await Vehicle.findByIdAndUpdate(vehicle._id, update, { new: true });
 
     // --- Hardware Alarm / Panic Business Logic ---
-    if (alarmSensor?.panicButton || alarmSensor?.sos) {
+    if ((alarmSensor?.panicButton || alarmSensor?.sos) && vehicle.company) {
       const alert = await Alert.create({
         vehicle: vehicle._id,
         company: vehicle.company,
@@ -143,7 +143,6 @@ router.post('/upload', async (req, res) => {
 
       // Broadcast panic alert immediately to all relevant rooms
       if (req.io) {
-        const { broadcastAlert } = await import('../socket/index.js');
         broadcastAlert(req.io, vehicle._id, vehicle.company, alert);
       }
     }

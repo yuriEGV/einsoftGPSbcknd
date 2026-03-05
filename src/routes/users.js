@@ -68,17 +68,27 @@ router.post('/change-password', authenticate, async (req, res) => {
 // Admin: Update user
 router.put('/:id', authenticate, authorize('admin', 'fleet_manager'), async (req, res) => {
   try {
-    const { name, email, role, status } = req.body;
+    const { name, email, role, status, companyId } = req.body;
 
-    // Check if user belongs to same company
-    const targetUser = await User.findOne({ _id: req.params.id, company: req.user.company });
+    // Check ownership/permissions
+    let filter = { _id: req.params.id };
+    if (req.user.role !== 'admin') {
+      filter.company = req.user.company;
+    }
+
+    const targetUser = await User.findOne(filter);
     if (!targetUser) {
-      return res.status(404).json({ error: 'User not found' });
+      return res.status(404).json({ error: 'User not found or unauthorized' });
+    }
+
+    const updateFields = { name, email, role, status };
+    if (req.user.role === 'admin' && companyId) {
+      updateFields.company = companyId;
     }
 
     const updatedUser = await User.findByIdAndUpdate(
       req.params.id,
-      { name, email, role, status },
+      updateFields,
       { new: true }
     ).select('-password');
 
@@ -91,10 +101,14 @@ router.put('/:id', authenticate, authorize('admin', 'fleet_manager'), async (req
 // Admin: Delete user
 router.delete('/:id', authenticate, authorize('admin', 'fleet_manager'), async (req, res) => {
   try {
-    // Check if user belongs to same company
-    const targetUser = await User.findOne({ _id: req.params.id, company: req.user.company });
+    let filter = { _id: req.params.id };
+    if (req.user.role !== 'admin') {
+      filter.company = req.user.company;
+    }
+
+    const targetUser = await User.findOne(filter);
     if (!targetUser) {
-      return res.status(404).json({ error: 'User not found' });
+      return res.status(404).json({ error: 'User not found or unauthorized' });
     }
 
     // Prevent self-deletion
@@ -112,14 +126,14 @@ router.delete('/:id', authenticate, authorize('admin', 'fleet_manager'), async (
 // Admin: Create user
 router.post('/', authenticate, authorize('admin', 'fleet_manager'), async (req, res) => {
   try {
-    const { name, email, password, role } = req.body;
+    const { name, email, password, role, companyId } = req.body;
 
     const user = new User({
       name,
-      email,
+      email: email.toLowerCase(),
       password: await bcrypt.hash(password, 10),
       role,
-      company: req.user.company,
+      company: req.user.role === 'admin' ? (companyId || null) : req.user.company,
     });
 
     await user.save();

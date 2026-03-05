@@ -44,8 +44,9 @@ router.post('/login', async (req, res) => {
   try {
     await connectDB();
     const { email, password } = req.body;
+    const normalizedEmail = email.toLowerCase();
 
-    const user = await User.findOne({ email }).populate('company');
+    const user = await User.findOne({ email: normalizedEmail }).populate('company');
     if (!user || !await bcrypt.compare(password, user.password)) {
       return res.status(401).json({ error: 'Invalid credentials' });
     }
