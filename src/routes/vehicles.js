@@ -7,11 +7,13 @@ import { broadcastVehicleUpdate } from '../socket/index.js';
 
 const router = express.Router();
 
-// Get all vehicles (Admin: all, Others: by company)
-router.get('/', authenticate, authorize('admin', 'fleet_manager'), async (req, res) => {
+// Get all vehicles (Admin: all, Others: by company, Driver: only assigned)
+router.get('/', authenticate, async (req, res) => {
   try {
     let filter = {};
-    if (req.user.role !== 'admin') {
+    if (req.user.role === 'driver') {
+      filter.driver = req.user.id;
+    } else if (req.user.role !== 'admin') {
       filter.company = req.user.company;
     }
 
@@ -37,11 +39,13 @@ router.get('/', authenticate, authorize('admin', 'fleet_manager'), async (req, r
   }
 });
 
-// Get vehicle by ID (Admin: bypass company check)
-router.get('/:id', authenticate, authorize('admin', 'fleet_manager'), async (req, res) => {
+// Get vehicle by ID (Admin: bypass company check, Driver: only if assigned)
+router.get('/:id', authenticate, async (req, res) => {
   try {
     let filter = { _id: req.params.id };
-    if (req.user.role !== 'admin') {
+    if (req.user.role === 'driver') {
+      filter.driver = req.user.id;
+    } else if (req.user.role !== 'admin') {
       filter.company = req.user.company;
     }
 
@@ -68,7 +72,7 @@ router.get('/:id', authenticate, authorize('admin', 'fleet_manager'), async (req
   }
 });
 
-// Create vehicle (Admin: allowed company assignment)
+// Create vehicle (Admin/FleetManager: allowed company assignment)
 router.post('/', authenticate, authorize('admin', 'fleet_manager'), async (req, res) => {
   try {
     const { companyId, ...vehicleData } = req.body;
@@ -84,7 +88,7 @@ router.post('/', authenticate, authorize('admin', 'fleet_manager'), async (req, 
   }
 });
 
-// Update vehicle (Admin: allowed company assignment)
+// Update vehicle (Admin/FleetManager: allowed company assignment)
 router.put('/:id', authenticate, authorize('admin', 'fleet_manager'), async (req, res) => {
   try {
     const { companyId, ...updateData } = req.body;

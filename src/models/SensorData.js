@@ -68,12 +68,6 @@ const sensorDataSchema = new mongoose.Schema({
 
   // Computed/processed fields
   rawSignal: String, // Store raw GPS trace if needed
-}, {
-  timeseries: {
-    timeField: 'timestamp',
-    metaField: 'metadata',
-    granularity: 'minutes',
-  },
 });
 
 sensorDataSchema.index({ vehicle: 1, timestamp: -1 });
