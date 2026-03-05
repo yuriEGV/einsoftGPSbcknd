@@ -83,7 +83,7 @@ router.put('/:id', authenticate, async (req, res) => {
 // Vincular / actualizar dispositivo (IMEI, SIM, Modelo) al vehículo
 router.post('/:id/link-device', authenticate, async (req, res) => {
   try {
-    const { deviceIMEI, simCardNumber, deviceModel } = req.body;
+    const { deviceIMEI, simCardNumber, deviceModel, driverId } = req.body;
 
     if (!deviceIMEI) {
       return res.status(400).json({ error: 'deviceIMEI es requerido' });
@@ -101,11 +101,16 @@ router.post('/:id/link-device', authenticate, async (req, res) => {
       { $unset: { deviceIMEI: 1 } },
     );
 
+    const updateData = { deviceIMEI, simCardNumber, deviceModel };
+    if (driverId) {
+      updateData.driver = driverId;
+    }
+
     const vehicle = await Vehicle.findByIdAndUpdate(
       req.params.id,
-      { deviceIMEI, simCardNumber, deviceModel },
+      updateData,
       { new: true },
-    );
+    ).populate('driver', 'name email');
 
     res.json({
       message: 'Dispositivo vinculado correctamente',
