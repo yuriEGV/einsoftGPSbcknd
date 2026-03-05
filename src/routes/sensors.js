@@ -48,25 +48,24 @@ router.post('/upload', async (req, res) => {
     await sensorData.save();
 
     // --- Geofence and Alert Logic ---
-    const activeGeofences = await Geofence.find({
-      company: vehicle.company,
-      active: true,
-      assignedVehicles: vehicle._id
-    });
+    if (gps && typeof gps.latitude === 'number' && typeof gps.longitude === 'number') {
+      const activeGeofences = await Geofence.find({
+        company: vehicle.company,
+        active: true,
+        assignedVehicles: vehicle._id
+      });
 
-    for (const gf of activeGeofences) {
-      let isInside = false;
-      const point = [gps.longitude, gps.latitude];
+      for (const gf of activeGeofences) {
+        let isInside = false;
+        const point = [gps.longitude, gps.latitude];
 
-      if (gf.geometry.type === 'Point' && gf.radius) {
-        // Point distance check (1 degree ~ 111.32km)
-        const dx = (gps.longitude - gf.geometry.coordinates[0]) * Math.cos(gps.latitude * Math.PI / 180);
-        const dy = gps.latitude - gf.geometry.coordinates[1];
-        const distanceKm = Math.sqrt(dx * dx + dy * dy) * 111.32;
-        isInside = (distanceKm * 1000) <= gf.radius;
-      } else if (gf.geometry.type === 'Polygon') {
-        // Simple bounding box check for polygon or we'd need a library like turf
-        // For now, we'll keep the vehicle update logic
+        if (gf.geometry.type === 'Point' && gf.radius) {
+          // Point distance check (1 degree ~ 111.32km)
+          const dx = (gps.longitude - gf.geometry.coordinates[0]) * Math.cos(gps.latitude * Math.PI / 180);
+          const dy = gps.latitude - gf.geometry.coordinates[1];
+          const distanceKm = Math.sqrt(dx * dx + dy * dy) * 111.32;
+          isInside = (distanceKm * 1000) <= gf.radius;
+        }
       }
     }
 
