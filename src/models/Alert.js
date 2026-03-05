@@ -6,6 +6,11 @@ const alertSchema = new mongoose.Schema({
     ref: 'Vehicle',
     required: true,
   },
+  company: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Company',
+    required: true,
+  },
   type: {
     type: String,
     enum: [

@@ -92,7 +92,7 @@ router.post('/upload', async (req, res) => {
       if (typeof gps.speed === 'number') {
         update.speed = gps.speed;
         if (gps.speed > 120) {
-          await Alert.create({
+          const alert = await Alert.create({
             vehicle: vehicle._id,
             company: vehicle.company,
             type: 'speeding',
@@ -102,6 +102,12 @@ router.post('/upload', async (req, res) => {
             triggerValue: gps.speed,
             threshold: 120
           });
+
+          // Broadcast speeding alert
+          if (req.io) {
+            const { broadcastAlert } = await import('../socket/index.js');
+            broadcastAlert(req.io, vehicle._id, vehicle.company, alert);
+          }
         }
       }
       if (typeof gps.heading === 'number') {
@@ -125,7 +131,7 @@ router.post('/upload', async (req, res) => {
 
     // --- Hardware Alarm / Panic Business Logic ---
     if (alarmSensor?.panicButton || alarmSensor?.sos) {
-      await Alert.create({
+      const alert = await Alert.create({
         vehicle: vehicle._id,
         company: vehicle.company,
         type: 'panic',
@@ -134,6 +140,12 @@ router.post('/upload', async (req, res) => {
         location: alertLocation,
         triggerValue: true
       });
+
+      // Broadcast panic alert immediately to all relevant rooms
+      if (req.io) {
+        const { broadcastAlert } = await import('../socket/index.js');
+        broadcastAlert(req.io, vehicle._id, vehicle.company, alert);
+      }
     }
 
     // Emitir socket para actualización en tiempo real (si está disponible)
