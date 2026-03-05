@@ -72,15 +72,24 @@ router.post('/upload', async (req, res) => {
 
     // Actualizar datos en el vehículo para reflejar la última posición/estado
     const update = { lastUpdate: now };
-    if (gps) {
+    let alertLocation = null;
+
+    if (gps && typeof gps.latitude === 'number' && typeof gps.longitude === 'number') {
       update.location = {
         type: 'Point',
-        coordinates: [gps.longitude || 0, gps.latitude || 0],
+        coordinates: [gps.longitude, gps.latitude],
         address: vehicle.location?.address,
         city: vehicle.location?.city,
         country: vehicle.location?.country,
         timestamp: now,
       };
+
+      alertLocation = {
+        latitude: gps.latitude,
+        longitude: gps.longitude,
+        address: vehicle.location?.address
+      };
+
       if (typeof gps.speed === 'number') {
         update.speed = gps.speed;
         if (gps.speed > 120) {
@@ -90,7 +99,7 @@ router.post('/upload', async (req, res) => {
             type: 'speeding',
             severity: 'high',
             message: `Exceso de velocidad: ${gps.speed} km/h`,
-            location: { latitude: gps.latitude, longitude: gps.longitude },
+            location: alertLocation,
             triggerValue: gps.speed,
             threshold: 120
           });
@@ -100,7 +109,15 @@ router.post('/upload', async (req, res) => {
         update.heading = gps.heading;
       }
       update.status = 'active';
+    } else {
+      // Si no hay GPS, al menos usamos la última ubicación conocida para alertas críticas
+      alertLocation = {
+        latitude: vehicle.location?.coordinates?.[1] || 0,
+        longitude: vehicle.location?.coordinates?.[0] || 0,
+        address: vehicle.location?.address
+      };
     }
+
     if (fuel && typeof fuel.level === 'number') {
       update['sensors.fuel'] = fuel.level;
     }
@@ -115,7 +132,7 @@ router.post('/upload', async (req, res) => {
         type: 'panic',
         severity: 'critical',
         message: '¡BOTÓN DE PÁNICO ACTIVADO!',
-        location: update.location,
+        location: alertLocation,
         triggerValue: true
       });
     }
