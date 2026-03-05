@@ -5,6 +5,24 @@ import { authenticate, authorize } from '../middleware/auth.js';
 
 const router = express.Router();
 
+// Get all drivers in company
+router.get('/drivers', authenticate, async (req, res) => {
+  try {
+    let filter = { role: 'driver' };
+    if (req.user.role !== 'admin') {
+      filter.company = req.user.company;
+    }
+
+    const drivers = await User.find(filter)
+      .select('name email phone')
+      .sort({ name: 1 });
+
+    res.json(drivers);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Get all users in company
 router.get('/', authenticate, async (req, res) => {
   try {
