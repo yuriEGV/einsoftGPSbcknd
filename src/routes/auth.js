@@ -12,8 +12,9 @@ router.post('/register', async (req, res) => {
   try {
     await connectDB();
     const { name, email, password, phone, role = 'driver' } = req.body;
+    const normalizedEmail = email.toLowerCase();
 
-    if (await User.findOne({ email })) {
+    if (await User.findOne({ email: normalizedEmail })) {
       return res.status(400).json({ error: 'Email already registered' });
     }
 
@@ -21,7 +22,7 @@ router.post('/register', async (req, res) => {
 
     const user = new User({
       name,
-      email,
+      email: normalizedEmail, // Store normalized email
       password: hashedPassword,
       phone,
       role,
