@@ -1,16 +1,34 @@
 import express from 'express';
 import Geofence from '../models/Geofence.js';
 import Vehicle from '../models/Vehicle.js';
+import Company from '../models/Company.js';
+import User from '../models/User.js';
 import { authenticate } from '../middleware/auth.js';
 
 const router = express.Router();
 
+// Helper: resolve company for the request user
+// Super admins may not have company in their JWT — look it up from DB or use first available
+async function resolveCompany(req) {
+  if (req.user.company) return req.user.company;
+  // Try fetching from DB
+  const user = await User.findById(req.user.id).select('company');
+  if (user?.company) return user.company;
+  // Super admin fallback: use first company
+  const firstCompany = await Company.findOne().select('_id');
+  return firstCompany?._id || null;
+}
+
 // Create geofence
 router.post('/', authenticate, async (req, res) => {
   try {
+    const companyId = await resolveCompany(req);
+    if (!companyId) {
+      return res.status(400).json({ error: 'No se encontró empresa asociada al usuario.' });
+    }
     const geofence = new Geofence({
       ...req.body,
-      company: req.user.company,
+      company: companyId,
     });
 
     await geofence.save();
@@ -20,10 +38,18 @@ router.post('/', authenticate, async (req, res) => {
   }
 });
 
+
 // Get all geofences for company
 router.get('/', authenticate, async (req, res) => {
   try {
-    const geofences = await Geofence.find({ company: req.user.company })
+    let query = {};
+    const companyId = await resolveCompany(req);
+    if (companyId) {
+      query.company = companyId;
+    } else if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado: Sin contexto de empresa' });
+    }
+    const geofences = await Geofence.find(query)
       .populate('assignedVehicles', 'licensePlate');
 
     res.json(geofences);
@@ -32,10 +58,17 @@ router.get('/', authenticate, async (req, res) => {
   }
 });
 
+
 // Get geofence by ID
 router.get('/:id', authenticate, async (req, res) => {
   try {
-    const geofence = await Geofence.findOne({ _id: req.params.id, company: req.user.company })
+    let filter = { _id: req.params.id };
+    if (req.user.company) {
+      filter.company = req.user.company;
+    } else if (req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'No autorizado: Sin contexto de empresa' });
+    }
+    const geofence = await Geofence.findOne(filter)
       .populate('assignedVehicles');
 
     if (!geofence) {
@@ -51,8 +84,9 @@ router.get('/:id', authenticate, async (req, res) => {
 // Update geofence
 router.put('/:id', authenticate, async (req, res) => {
   try {
+    const companyId = await resolveCompany(req);
     const geofence = await Geofence.findOneAndUpdate(
-      { _id: req.params.id, company: req.user.company },
+      { _id: req.params.id, ...(companyId ? { company: companyId } : {}) },
       req.body,
       { new: true }
     );
@@ -70,9 +104,10 @@ router.put('/:id', authenticate, async (req, res) => {
 // Delete geofence
 router.delete('/:id', authenticate, async (req, res) => {
   try {
+    const companyId = await resolveCompany(req);
     const geofence = await Geofence.findOneAndDelete({
       _id: req.params.id,
-      company: req.user.company
+      ...(companyId ? { company: companyId } : {})
     });
 
     if (!geofence) {
