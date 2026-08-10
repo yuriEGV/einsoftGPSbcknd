@@ -300,7 +300,23 @@ router.get('/:id/stats', authenticate, async (req, res) => {
       },
     ]);
 
-    res.json(data[0] || {});
+// Delete vehicle (Admin / Fleet Manager)
+router.delete('/:id', authenticate, authorize('admin', 'fleet_manager'), async (req, res) => {
+  try {
+    let filter = { _id: req.params.id };
+    if (req.user.role !== 'admin') {
+      filter.company = req.user.company;
+    }
+
+    const vehicle = await Vehicle.findOneAndDelete(filter);
+    if (!vehicle) {
+      return res.status(404).json({ error: 'Vehículo no encontrado o no autorizado' });
+    }
+
+    // Clean up associated sensor data
+    await SensorData.deleteMany({ vehicle: req.params.id });
+
+    res.json({ message: 'Vehículo eliminado correctamente' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
