@@ -21,8 +21,8 @@ const userSchema = new mongoose.Schema({
   phone: String,
   role: {
     type: String,
-    enum: ['admin', 'fleet_manager', 'driver', 'viewer'],
-    default: 'driver',
+    enum: ['admin', 'fleet_manager', 'driver', 'viewer', 'independent'],
+    default: 'independent',
   },
   company: {
     type: mongoose.Schema.Types.ObjectId,

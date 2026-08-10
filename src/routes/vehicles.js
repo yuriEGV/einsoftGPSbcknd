@@ -7,21 +7,29 @@ import { broadcastVehicleUpdate } from '../socket/index.js';
 
 const router = express.Router();
 
-// Get all vehicles (Admin: all, Others: by company, Driver: only assigned)
+// Helper: Build query filter based on user role and company/owner
+function buildVehicleFilter(user, vehicleId = null) {
+  let filter = vehicleId ? { _id: vehicleId } : {};
+  if (user.role === 'admin') {
+    return filter; // Admin sees all
+  }
+  if (user.company) {
+    filter.company = user.company;
+    if (user.role === 'driver') filter.driver = user.id;
+    return filter;
+  }
+  // Independent / Personal user or non-company manager
+  filter.$or = [
+    { owner: user.id },
+    { driver: user.id },
+  ];
+  return filter;
+}
+
+// Get all vehicles (Admin: all, Company users: by company, Independent: by owner/driver)
 router.get('/', authenticate, async (req, res) => {
   try {
-    let filter = {};
-    if (req.user.company) {
-      // If user is tied to a company, EVERYTHING they see must be filtered by it.
-      filter.company = req.user.company;
-      if (req.user.role === 'driver') {
-        filter.driver = req.user.id;
-      }
-    } else if (req.user.role !== 'admin') {
-      // Logic for users without company context but non-admin (legacy check)
-      return res.status(403).json({ error: 'Unauthorized: No company context found' });
-    }
-
+    const filter = buildVehicleFilter(req.user);
     const now = new Date();
     const vehicles = await Vehicle.find(filter)
       .populate('driver', 'name email phone')
@@ -44,29 +52,19 @@ router.get('/', authenticate, async (req, res) => {
   }
 });
 
-// Get vehicle by ID (Admin: bypass company check, Driver: only if assigned)
+// Get vehicle by ID
 router.get('/:id', authenticate, async (req, res) => {
   try {
-    let filter = { _id: req.params.id };
-    if (req.user.company) {
-      filter.company = req.user.company;
-      if (req.user.role === 'driver') {
-        filter.driver = req.user.id;
-      }
-    } else if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Unauthorized: No company context' });
-    }
-
+    const filter = buildVehicleFilter(req.user, req.params.id);
     const vehicle = await Vehicle.findOne(filter)
       .populate('driver', 'name email phone')
       .populate('company', 'name')
       .populate('geofences');
 
     if (!vehicle) {
-      return res.status(404).json({ error: 'Vehicle not found or unauthorized' });
+      return res.status(404).json({ error: 'Vehículo no encontrado o no autorizado' });
     }
 
-    // Get latest sensor data
     const latestSensorData = await SensorData.findOne({
       vehicle: vehicle._id,
     }).sort({ timestamp: -1 });
@@ -80,13 +78,14 @@ router.get('/:id', authenticate, async (req, res) => {
   }
 });
 
-// Create vehicle (Admin/FleetManager: allowed company assignment)
-router.post('/', authenticate, authorize('admin', 'fleet_manager'), async (req, res) => {
+// Create vehicle (Admin, FleetManager, Independent, Driver)
+router.post('/', authenticate, authorize('admin', 'fleet_manager', 'independent', 'driver'), async (req, res) => {
   try {
     const { companyId, ...vehicleData } = req.body;
     const vehicle = new Vehicle({
       ...vehicleData,
-      company: req.user.company || companyId,
+      company: req.user.company || companyId || undefined,
+      owner: req.user.id,
     });
 
     await vehicle.save();
@@ -96,14 +95,11 @@ router.post('/', authenticate, authorize('admin', 'fleet_manager'), async (req, 
   }
 });
 
-// Update vehicle (Admin/FleetManager: allowed company assignment)
-router.put('/:id', authenticate, authorize('admin', 'fleet_manager'), async (req, res) => {
+// Update vehicle (Admin, FleetManager, Independent, Driver)
+router.put('/:id', authenticate, authorize('admin', 'fleet_manager', 'independent', 'driver'), async (req, res) => {
   try {
     const { companyId, ...updateData } = req.body;
-    let filter = { _id: req.params.id };
-    if (req.user.role !== 'admin') {
-      filter.company = req.user.company;
-    }
+    const filter = buildVehicleFilter(req.user, req.params.id);
 
     if (req.user.role === 'admin' && companyId) {
       updateData.company = companyId;
@@ -112,7 +108,7 @@ router.put('/:id', authenticate, authorize('admin', 'fleet_manager'), async (req
     const vehicle = await Vehicle.findOneAndUpdate(filter, updateData, { new: true });
 
     if (!vehicle) {
-      return res.status(404).json({ error: 'Vehicle not found or unauthorized' });
+      return res.status(404).json({ error: 'Vehículo no encontrado o no autorizado' });
     }
 
     res.json(vehicle);
@@ -122,7 +118,7 @@ router.put('/:id', authenticate, authorize('admin', 'fleet_manager'), async (req
 });
 
 // Vincular / actualizar dispositivo (IMEI, SIM, Modelo) al vehículo
-router.post('/:id/link-device', authenticate, authorize('admin', 'fleet_manager'), async (req, res) => {
+router.post('/:id/link-device', authenticate, authorize('admin', 'fleet_manager', 'independent', 'driver'), async (req, res) => {
   try {
     const { deviceIMEI, simCardNumber, deviceModel, driverId } = req.body;
 
@@ -130,12 +126,7 @@ router.post('/:id/link-device', authenticate, authorize('admin', 'fleet_manager'
       return res.status(400).json({ error: 'deviceIMEI es requerido' });
     }
 
-    // Asegurar que el vehículo existe y pertenece a la empresa (o es Admin) antes de seguir
-    let filter = { _id: req.params.id };
-    if (req.user.role !== 'admin') {
-      filter.company = req.user.company;
-    }
-
+    const filter = buildVehicleFilter(req.user, req.params.id);
     const checkVehicle = await Vehicle.findOne(filter);
     if (!checkVehicle) {
       return res.status(404).json({ error: 'Vehículo no encontrado o no autorizado' });
@@ -301,12 +292,10 @@ router.get('/:id/stats', authenticate, async (req, res) => {
     ]);
 
 // Delete vehicle (Admin / Fleet Manager)
-router.delete('/:id', authenticate, authorize('admin', 'fleet_manager'), async (req, res) => {
+// Delete vehicle (Admin / Fleet Manager / Independent)
+router.delete('/:id', authenticate, authorize('admin', 'fleet_manager', 'independent', 'driver'), async (req, res) => {
   try {
-    let filter = { _id: req.params.id };
-    if (req.user.role !== 'admin') {
-      filter.company = req.user.company;
-    }
+    const filter = buildVehicleFilter(req.user, req.params.id);
 
     const vehicle = await Vehicle.findOneAndDelete(filter);
     if (!vehicle) {

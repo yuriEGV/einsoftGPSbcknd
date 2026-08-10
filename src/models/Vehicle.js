@@ -19,7 +19,11 @@ const vehicleSchema = new mongoose.Schema({
   company: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Company',
-    required: true,
+    required: false,
+  },
+  owner: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
   },
   driver: {
     type: mongoose.Schema.Types.ObjectId,

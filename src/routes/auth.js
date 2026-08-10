@@ -11,11 +11,11 @@ const router = express.Router();
 router.post('/register', async (req, res) => {
   try {
     await connectDB();
-    const { name, email, password, phone, role = 'driver' } = req.body;
+    const { name, email, password, phone, role = 'independent' } = req.body;
     const normalizedEmail = email.toLowerCase();
 
     if (await User.findOne({ email: normalizedEmail })) {
-      return res.status(400).json({ error: 'Email already registered' });
+      return res.status(400).json({ error: 'Email ya registrado en la plataforma' });
     }
 
     const hashedPassword = await bcrypt.hash(password, 10);

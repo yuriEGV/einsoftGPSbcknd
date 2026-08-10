@@ -33,22 +33,22 @@ const io = new Server(server, {
 });
 app.set('io', io);
 
-// Middleware - Updated CORS to be more robust
-const allowedOrigins = [
-  'https://einsoft-gp-sfrntnd.vercel.app',
-  'http://localhost:3000',
-  'http://localhost:5173',
-  process.env.SOCKET_IO_CORS_ORIGIN
-].filter(Boolean);
+// Universal CORS Header Middleware (Guarantees CORS headers on all Vercel responses & preflights)
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  res.header('Access-Control-Allow-Origin', origin || '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+  res.header('Access-Control-Allow-Credentials', 'true');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+  next();
+});
 
 app.use(cors({
-  origin: function (origin, callback) {
-    if (!origin || allowedOrigins.includes(origin) || origin.endsWith('.vercel.app')) {
-      callback(null, true);
-    } else {
-      callback(null, true); // Fallback to true for development/debugging if origin check is flaky
-    }
-  },
+  origin: true,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
