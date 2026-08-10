@@ -74,4 +74,4 @@ sensorDataSchema.index({ vehicle: 1, timestamp: -1 });
 sensorDataSchema.index({ deviceIMEI: 1, timestamp: -1 });
 sensorDataSchema.index({ timestamp: -1 });
 
-export default mongoose.model('SensorData', sensorDataSchema);
+export default mongoose.models.SensorData || mongoose.model('SensorData', sensorDataSchema);

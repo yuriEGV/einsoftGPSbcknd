@@ -64,4 +64,4 @@ geofenceSchema.index({ geometry: '2dsphere' });
 geofenceSchema.index({ company: 1 });
 geofenceSchema.index({ center: '2dsphere' });
 
-export default mongoose.model('Geofence', geofenceSchema);
+export default mongoose.models.Geofence || mongoose.model('Geofence', geofenceSchema);

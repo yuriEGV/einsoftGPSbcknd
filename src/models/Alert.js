@@ -87,4 +87,4 @@ alertSchema.index({ vehicle: 1, createdAt: -1 });
 alertSchema.index({ type: 1, severity: 1 });
 alertSchema.index({ acknowledged: 1 });
 
-export default mongoose.model('Alert', alertSchema);
+export default mongoose.models.Alert || mongoose.model('Alert', alertSchema);

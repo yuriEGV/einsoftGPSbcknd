@@ -158,4 +158,4 @@ vehicleSchema.index({ licensePlate: 1 });
 vehicleSchema.index({ deviceIMEI: 1 });
 vehicleSchema.index({ lastUpdate: -1 });
 
-export default mongoose.model('Vehicle', vehicleSchema);
+export default mongoose.models.Vehicle || mongoose.model('Vehicle', vehicleSchema);
