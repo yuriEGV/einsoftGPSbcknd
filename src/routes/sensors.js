@@ -30,15 +30,30 @@ async function processGPSUpload(deviceIMEI, payload, io) {
   let alertLocation = null;
 
   if (gps && typeof gps.latitude === 'number' && typeof gps.longitude === 'number') {
+    // Resolve address/city dynamically if not explicitly provided
+    let city = vehicle.location?.city;
+    let country = vehicle.location?.country || 'Chile';
+    let address = vehicle.location?.address;
+
+    if (gps.latitude < -32.9 && gps.latitude > -33.2 && gps.longitude < -71.4 && gps.longitude > -71.7) {
+      city = 'Valparaíso';
+      address = 'Valparaíso, Región de Valparaíso';
+    } else if (gps.latitude < -33.3 && gps.latitude > -33.7 && gps.longitude < -70.4 && gps.longitude > -70.8) {
+      city = 'Santiago';
+      address = 'Santiago, Región Metropolitana';
+    } else {
+      address = `${gps.latitude.toFixed(4)}, ${gps.longitude.toFixed(4)}`;
+    }
+
     update.location = {
       type: 'Point',
       coordinates: [gps.longitude, gps.latitude],
-      address: vehicle.location?.address,
-      city: vehicle.location?.city,
-      country: vehicle.location?.country,
+      address: gps.address || address,
+      city: gps.city || city,
+      country: gps.country || country,
       timestamp: now,
     };
-    alertLocation = { latitude: gps.latitude, longitude: gps.longitude, address: vehicle.location?.address };
+    alertLocation = { latitude: gps.latitude, longitude: gps.longitude, address: update.location.address };
 
     if (typeof gps.speed === 'number') {
       update.speed = gps.speed;
