@@ -16,8 +16,12 @@ const superAdminOnly = (req, res, next) => {
 };
 
 // Listar empresas (solo super-admin) con conteo de vehículos
-router.get('/', authenticate, authorize('admin'), superAdminOnly, async (req, res) => {
+router.get('/', authenticate, async (req, res) => {
   try {
+    if (req.user.company || req.user.role !== 'admin') {
+      // Non-admins or non-super-admins get empty list of global companies
+      return res.json([]);
+    }
     const companies = await Company.find().sort({ createdAt: -1 });
     const Vehicle = mongoose.model('Vehicle');
 

@@ -58,8 +58,8 @@ router.post('/panic', authenticate, async (req, res) => {
   }
 });
 
-// Get all alerts for company
-router.get('/', authenticate, authorize('admin', 'fleet_manager'), async (req, res) => {
+// Get all alerts
+router.get('/', authenticate, authorize('admin', 'fleet_manager', 'independent', 'driver'), async (req, res) => {
   try {
     const { status = 'all', severity = 'all', limit = 50 } = req.query;
 
@@ -67,7 +67,11 @@ router.get('/', authenticate, authorize('admin', 'fleet_manager'), async (req, r
     if (req.user.company) {
       query.company = req.user.company;
     } else if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'No autorizado: Sin contexto de empresa' });
+      // Find vehicles owned by this user
+      const Vehicle = mongoose.model('Vehicle');
+      const userVehicles = await Vehicle.find({ $or: [{ owner: req.user.id }, { driver: req.user.id }] }).select('_id');
+      const vehicleIds = userVehicles.map(v => v._id);
+      query.vehicle = { $in: vehicleIds };
     }
 
     if (status === 'unacknowledged') {

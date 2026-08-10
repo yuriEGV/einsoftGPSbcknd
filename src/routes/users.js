@@ -12,7 +12,7 @@ router.get('/drivers', authenticate, async (req, res) => {
     if (req.user.company) {
       filter.company = req.user.company;
     } else if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Unauthorized: No company context' });
+      filter._id = req.user.id;
     }
 
     const drivers = await User.find(filter)
@@ -25,14 +25,14 @@ router.get('/drivers', authenticate, async (req, res) => {
   }
 });
 
-// Get all users in company
+// Get all users
 router.get('/', authenticate, async (req, res) => {
   try {
     let filter = {};
     if (req.user.company) {
       filter.company = req.user.company;
     } else if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'Unauthorized: No company context' });
+      filter._id = req.user.id;
     }
 
     const users = await User.find(filter)
