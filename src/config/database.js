@@ -22,25 +22,24 @@ const connectDB = async () => {
   try {
     isConnecting = true;
     let uri = process.env.MONGODB_URI;
-    if (!uri) throw new Error('MONGODB_URI is not defined');
+    if (!uri) {
+      console.error('❌ MONGODB_URI is not defined in environment variables');
+      throw new Error('MONGODB_URI is not defined');
+    }
 
-    // Trim whitespace to prevent "database names cannot contain the character ' '" errors
     uri = uri.trim();
-
-    // Disable buffering because in serverless we want immediate failure over hanging
-    mongoose.set('bufferCommands', false);
 
     console.log('🔄 Connecting to MongoDB...');
     await mongoose.connect(uri, {
       useNewUrlParser: true,
       useUnifiedTopology: true,
-      serverSelectionTimeoutMS: 5000,
+      serverSelectionTimeoutMS: 8000,
     });
 
     console.log('📊 MongoDB Connected');
 
     // Non-blocking index creation
-    createGeoIndexes().catch(err => console.error('Index creation failed:', err.message));
+    createGeoIndexes().catch(err => console.warn('Index creation warning:', err.message));
 
     return mongoose.connection;
   } catch (error) {

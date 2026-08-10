@@ -60,32 +60,30 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 app.use(requestLogger);
 
+// Health Check (always responds 200 OK, even if DB is connecting)
+app.get('/api/health', async (req, res) => {
+  const dbStatus = mongoose.connection.readyState === 1 ? 'CONNECTED' : 'CONNECTING_OR_DISCONNECTED';
+  res.json({
+    status: 'UP',
+    database: dbStatus,
+    timestamp: new Date().toISOString(),
+    version: '1.0.0',
+    vercel: process.env.VERCEL === '1'
+  });
+});
+
 // Middleware for DB connection - Ensures DB is ready for all API routes
 const dbMiddleware = async (req, res, next) => {
   try {
     await connectDB();
     next();
   } catch (error) {
-    next(error);
+    console.error('❌ DB Middleware Error:', error.message);
+    res.status(500).json({ error: 'Error de conexión con la base de datos', details: error.message });
   }
 };
 
-// Database check removed from top level (Vercel optimization)
-// connectDB(); 
-
-// Socket.io Setup
-setupSocket(io);
-
-// Basic Root Route
-app.get('/', (req, res) => {
-  res.json({
-    message: 'Einsoft GPS API Backend is running',
-    healthCheck: '/api/health',
-    status: 'Operational'
-  });
-});
-
-// Apply DB Middleware to all /api routes
+// Apply DB Middleware to all /api routes except health check
 app.use('/api', dbMiddleware);
 
 // Routes
@@ -97,18 +95,6 @@ app.use('/api/alerts', alertRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/companies', companyRoutes);
-
-// Health Check
-app.get('/api/health', async (req, res) => {
-  const dbStatus = mongoose.connection.readyState === 1 ? 'CONNECTED' : 'DISCONNECTED';
-  res.json({
-    status: 'UP',
-    database: dbStatus,
-    timestamp: new Date().toISOString(),
-    version: '1.0.0',
-    vercel: process.env.VERCEL === '1'
-  });
-});
 
 // 404 Handler
 app.use((req, res) => {
