@@ -161,7 +161,7 @@ router.post('/', authenticate, authorize('admin', 'fleet_manager'), async (req, 
       email: email.toLowerCase(),
       password: await bcrypt.hash(password, 10),
       role,
-      company: req.user.company || companyId,
+      company: role === 'independent' ? undefined : (req.user.company || companyId),
     });
 
     await user.save();

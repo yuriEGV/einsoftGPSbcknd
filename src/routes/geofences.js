@@ -22,13 +22,10 @@ async function resolveCompany(req) {
 // Create geofence
 router.post('/', authenticate, async (req, res) => {
   try {
-    const companyId = await resolveCompany(req);
-    if (!companyId) {
-      return res.status(400).json({ error: 'No se encontró empresa asociada al usuario.' });
-    }
     const geofence = new Geofence({
       ...req.body,
-      company: companyId,
+      company: req.user.company || undefined,
+      creator: req.user.id,
     });
 
     await geofence.save();
@@ -39,15 +36,17 @@ router.post('/', authenticate, async (req, res) => {
 });
 
 
-// Get all geofences for company
+// Get all geofences
 router.get('/', authenticate, async (req, res) => {
   try {
     let query = {};
-    const companyId = await resolveCompany(req);
-    if (companyId) {
-      query.company = companyId;
+    if (req.user.company) {
+      query.company = req.user.company;
     } else if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'No autorizado: Sin contexto de empresa' });
+      query.$or = [
+        { creator: req.user.id },
+        { company: null }
+      ];
     }
     const geofences = await Geofence.find(query)
       .populate('assignedVehicles', 'licensePlate');

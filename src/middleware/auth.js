@@ -25,10 +25,10 @@ export const authenticate = async (req, res, next) => {
 
     // Strict multi-tenancy context:
     // We attach the verified company ID from the DB to req.user
-    // This is the source of truth for all subsequent route filters.
+    // Independent users NEVER have a company context.
     req.user = {
       ...decoded,
-      company: user.company ? user.company.toString() : null,
+      company: (user.role === 'independent' || !user.company) ? null : user.company.toString(),
       role: user.role
     };
 

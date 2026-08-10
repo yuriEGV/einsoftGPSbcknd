@@ -4,11 +4,12 @@ import { authenticate, authorize } from '../middleware/auth.js';
 import SensorData from '../models/SensorData.js';
 import Vehicle from '../models/Vehicle.js';
 import Alert from '../models/Alert.js';
+import { buildVehicleFilter } from './vehicles.js';
 
 const router = express.Router();
 
 // Generate daily/weekly/monthly report
-router.get('/generate/:period', authenticate, authorize('admin', 'fleet_manager'), async (req, res) => {
+router.get('/generate/:period', authenticate, authorize('admin', 'fleet_manager', 'independent', 'driver'), async (req, res) => {
   try {
     const { vehicleId, startDate, endDate } = req.query;
     const { period } = req.params;
@@ -32,14 +33,10 @@ router.get('/generate/:period', authenticate, authorize('admin', 'fleet_manager'
       }
     }
 
-    let vehicleFilter = { _id: vehicleId };
-    if (req.user.role !== 'admin') {
-      vehicleFilter.company = req.user.company;
-    }
-
+    const vehicleFilter = buildVehicleFilter(req.user, vehicleId);
     const vehicle = await Vehicle.findOne(vehicleFilter);
     if (!vehicle) {
-      return res.status(404).json({ error: 'Vehicle not found or unauthorized' });
+      return res.status(404).json({ error: 'Vehículo no encontrado o no autorizado' });
     }
 
     const sensorData = await SensorData.find({
@@ -94,18 +91,15 @@ router.get('/generate/:period', authenticate, authorize('admin', 'fleet_manager'
 });
 
 // Export report as PDF
-router.get('/export/pdf/:vehicleId', authenticate, authorize('admin', 'fleet_manager'), async (req, res) => {
+router.get('/export/pdf/:vehicleId', authenticate, authorize('admin', 'fleet_manager', 'independent', 'driver'), async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-    let vehicleFilter = { _id: req.params.vehicleId };
-    if (req.user.role !== 'admin') {
-      vehicleFilter.company = req.user.company;
-    }
+    const vehicleFilter = buildVehicleFilter(req.user, req.params.vehicleId);
 
     const vehicle = await Vehicle.findOne(vehicleFilter);
 
     if (!vehicle) {
-      return res.status(404).json({ error: 'Vehicle not found or unauthorized' });
+      return res.status(404).json({ error: 'Vehículo no encontrado o no autorizado' });
     }
 
     const doc = new PDFDocument();

@@ -8,21 +8,26 @@ import { broadcastVehicleUpdate } from '../socket/index.js';
 const router = express.Router();
 
 // Helper: Build query filter based on user role and company/owner
-function buildVehicleFilter(user, vehicleId = null) {
+export function buildVehicleFilter(user, vehicleId = null) {
   let filter = vehicleId ? { _id: vehicleId } : {};
   if (user.role === 'admin') {
     return filter; // Admin sees all
   }
-  if (user.company) {
-    filter.company = user.company;
-    if (user.role === 'driver') filter.driver = user.id;
-    return filter;
+  if (user.role === 'independent' || !user.company) {
+    // Independent / Personal user: can ONLY see vehicles where owner == user.id OR driver == user.id
+    return {
+      ...filter,
+      $or: [
+        { owner: user.id },
+        { driver: user.id },
+      ],
+    };
   }
-  // Independent / Personal user or non-company manager
-  filter.$or = [
-    { owner: user.id },
-    { driver: user.id },
-  ];
+  // Corporate Company users
+  filter.company = user.company;
+  if (user.role === 'driver') {
+    filter.driver = user.id;
+  }
   return filter;
 }
 
