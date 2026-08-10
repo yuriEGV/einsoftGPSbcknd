@@ -291,7 +291,11 @@ router.get('/:id/stats', authenticate, async (req, res) => {
       },
     ]);
 
-// Delete vehicle (Admin / Fleet Manager)
+    res.json(data[0] || {});
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
 // Delete vehicle (Admin / Fleet Manager / Independent)
 router.delete('/:id', authenticate, authorize('admin', 'fleet_manager', 'independent', 'driver'), async (req, res) => {
   try {
