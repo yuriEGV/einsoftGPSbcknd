@@ -24,13 +24,22 @@ dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server, {
-  cors: {
-    origin: process.env.SOCKET_IO_CORS_ORIGIN || 'http://localhost:3000',
-    methods: ['GET', 'POST'],
-    credentials: true,
-  },
-});
+
+let io = null;
+if (process.env.VERCEL !== '1') {
+  try {
+    io = new Server(server, {
+      cors: {
+        origin: process.env.SOCKET_IO_CORS_ORIGIN || 'http://localhost:3000',
+        methods: ['GET', 'POST'],
+        credentials: true,
+      },
+    });
+    setupSocket(io);
+  } catch (e) {
+    console.warn('Socket.IO init warning:', e.message);
+  }
+}
 app.set('io', io);
 
 // Universal CORS Header Middleware for Vercel
