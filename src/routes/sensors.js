@@ -9,164 +9,211 @@ import { broadcastAlert } from '../socket/index.js';
 
 const router = express.Router();
 
-// Recibir datos de GPS/Sensores desde el dispositivo
+// ─── Helper: process and save a GPS upload payload ──────────────────────────
+async function processGPSUpload(deviceIMEI, payload, io) {
+  const { gps, obd2, fuel, temperature, accelerometer, doorSensor, battery, alarmSensor } = payload;
+
+  const vehicle = await Vehicle.findOne({ deviceIMEI });
+  if (!vehicle) return { error: 'Dispositivo no vinculado a ningún vehículo', status: 404 };
+
+  const now = new Date();
+
+  const sensorData = new SensorData({
+    deviceIMEI,
+    vehicle: vehicle._id,
+    gps, obd2, fuel, temperature, accelerometer, doorSensor, battery, alarmSensor,
+    timestamp: now,
+  });
+  await sensorData.save();
+
+  const update = { lastUpdate: now };
+  let alertLocation = null;
+
+  if (gps && typeof gps.latitude === 'number' && typeof gps.longitude === 'number') {
+    update.location = {
+      type: 'Point',
+      coordinates: [gps.longitude, gps.latitude],
+      address: vehicle.location?.address,
+      city: vehicle.location?.city,
+      country: vehicle.location?.country,
+      timestamp: now,
+    };
+    alertLocation = { latitude: gps.latitude, longitude: gps.longitude, address: vehicle.location?.address };
+
+    if (typeof gps.speed === 'number') {
+      update.speed = gps.speed;
+      if (gps.speed > 120) {
+        const alert = await Alert.create({
+          vehicle: vehicle._id, company: vehicle.company,
+          type: 'speeding', severity: 'high',
+          message: `Exceso de velocidad: ${gps.speed} km/h`,
+          location: alertLocation, triggerValue: gps.speed, threshold: 120,
+        });
+        if (io) broadcastAlert(io, vehicle._id, vehicle.company, alert);
+      }
+    }
+    if (typeof gps.heading === 'number') update.heading = gps.heading;
+    update.status = 'active';
+  } else {
+    alertLocation = {
+      latitude: vehicle.location?.coordinates?.[1] || 0,
+      longitude: vehicle.location?.coordinates?.[0] || 0,
+      address: vehicle.location?.address,
+    };
+  }
+
+  if (fuel && typeof fuel.level === 'number') update['sensors.fuel'] = fuel.level;
+
+  const updatedVehicle = await Vehicle.findByIdAndUpdate(vehicle._id, update, { new: true });
+
+  if ((alarmSensor?.panicButton || alarmSensor?.sos) && vehicle.company) {
+    const alert = await Alert.create({
+      vehicle: vehicle._id, company: vehicle.company,
+      type: 'panic', severity: 'critical',
+      message: '¡BOTÓN DE PÁNICO ACTIVADO!',
+      location: alertLocation, triggerValue: true,
+    });
+    if (io) broadcastAlert(io, vehicle._id, vehicle.company, alert);
+  }
+
+  if (io) {
+    io.emit('location_update', {
+      vehicleId: vehicle._id,
+      gps: update.location,
+      speed: update.speed,
+      heading: update.heading,
+      lastUpdate: now,
+    });
+  }
+
+  return { vehicleId: updatedVehicle._id, location: updatedVehicle.location };
+}
+
+
+
+// Recibir datos de GPS/Sensores desde el dispositivo (formato nativo Einsoft)
 router.post('/upload', async (req, res) => {
   try {
-    const {
-      deviceIMEI,
-      gps,
-      obd2,
-      fuel,
-      temperature,
-      accelerometer,
-      doorSensor,
-      battery,
-      alarmSensor,
-    } = req.body;
-
-    // Buscar vehículo vinculado por IMEI
-    const vehicle = await Vehicle.findOne({ deviceIMEI });
-    if (!vehicle) {
-      return res.status(404).json({ error: 'Dispositivo no vinculado a ningún vehículo' });
-    }
-
-    const now = new Date();
-
-    const sensorData = new SensorData({
-      deviceIMEI,
-      vehicle: vehicle._id,
-      gps,
-      obd2,
-      fuel,
-      temperature,
-      accelerometer,
-      doorSensor,
-      battery,
-      alarmSensor,
-      timestamp: now,
-    });
-
-    await sensorData.save();
-
-    // --- Geofence and Alert Logic ---
-    if (gps && typeof gps.latitude === 'number' && typeof gps.longitude === 'number') {
-      const activeGeofences = await Geofence.find({
-        company: vehicle.company,
-        active: true,
-        assignedVehicles: vehicle._id
-      });
-
-      for (const gf of activeGeofences) {
-        let isInside = false;
-        const point = [gps.longitude, gps.latitude];
-
-        if (gf.geometry.type === 'Point' && gf.radius) {
-          // Point distance check (1 degree ~ 111.32km)
-          const dx = (gps.longitude - gf.geometry.coordinates[0]) * Math.cos(gps.latitude * Math.PI / 180);
-          const dy = gps.latitude - gf.geometry.coordinates[1];
-          const distanceKm = Math.sqrt(dx * dx + dy * dy) * 111.32;
-          isInside = (distanceKm * 1000) <= gf.radius;
-        }
-      }
-    }
-
-    // Actualizar datos en el vehículo para reflejar la última posición/estado
-    const update = { lastUpdate: now };
-    let alertLocation = null;
-
-    if (gps && typeof gps.latitude === 'number' && typeof gps.longitude === 'number') {
-      update.location = {
-        type: 'Point',
-        coordinates: [gps.longitude, gps.latitude],
-        address: vehicle.location?.address,
-        city: vehicle.location?.city,
-        country: vehicle.location?.country,
-        timestamp: now,
-      };
-
-      alertLocation = {
-        latitude: gps.latitude,
-        longitude: gps.longitude,
-        address: vehicle.location?.address
-      };
-
-      if (typeof gps.speed === 'number') {
-        update.speed = gps.speed;
-        if (gps.speed > 120) {
-          const alert = await Alert.create({
-            vehicle: vehicle._id,
-            company: vehicle.company,
-            type: 'speeding',
-            severity: 'high',
-            message: `Exceso de velocidad: ${gps.speed} km/h`,
-            location: alertLocation,
-            triggerValue: gps.speed,
-            threshold: 120
-          });
-
-          // Broadcast speeding alert
-          if (req.io) {
-            broadcastAlert(req.io, vehicle._id, vehicle.company, alert);
-          }
-        }
-      }
-      if (typeof gps.heading === 'number') {
-        update.heading = gps.heading;
-      }
-      update.status = 'active';
-    } else {
-      // Si no hay GPS, al menos usamos la última ubicación conocida para alertas críticas
-      alertLocation = {
-        latitude: vehicle.location?.coordinates?.[1] || 0,
-        longitude: vehicle.location?.coordinates?.[0] || 0,
-        address: vehicle.location?.address
-      };
-    }
-
-    if (fuel && typeof fuel.level === 'number') {
-      update['sensors.fuel'] = fuel.level;
-    }
-
-    const updatedVehicle = await Vehicle.findByIdAndUpdate(vehicle._id, update, { new: true });
-
-    // --- Hardware Alarm / Panic Business Logic ---
-    if ((alarmSensor?.panicButton || alarmSensor?.sos) && vehicle.company) {
-      const alert = await Alert.create({
-        vehicle: vehicle._id,
-        company: vehicle.company,
-        type: 'panic',
-        severity: 'critical',
-        message: '¡BOTÓN DE PÁNICO ACTIVADO!',
-        location: alertLocation,
-        triggerValue: true
-      });
-
-      // Broadcast panic alert immediately to all relevant rooms
-      if (req.io) {
-        broadcastAlert(req.io, vehicle._id, vehicle.company, alert);
-      }
-    }
-
-    // Emitir socket para actualización en tiempo real (si está disponible)
-    if (req.io) {
-      req.io.emit('location_update', {
-        vehicleId: vehicle._id,
-        gps: update.location,
-        speed: update.speed,
-        heading: update.heading,
-        lastUpdate: now
-      });
-    }
-
-    res.status(201).json({
-      message: 'Datos recibidos y aplicados',
-      vehicleId: updatedVehicle._id,
-      location: updatedVehicle.location
-    });
+    const { deviceIMEI, ...payload } = req.body;
+    if (!deviceIMEI) return res.status(400).json({ error: 'deviceIMEI requerido' });
+    const result = await processGPSUpload(deviceIMEI, payload, req.io);
+    if (result.error) return res.status(result.status || 500).json({ error: result.error });
+    res.status(201).json({ message: 'Datos recibidos y aplicados', ...result });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
+
+// ─── Traccar Webhook ─────────────────────────────────────────────────────────
+// Traccar reenvía eventos aquí cuando está configurado con event.forward.url
+// Traccar payload: { deviceId, type, position: { deviceId, lat, lon, speed, course, ... } }
+router.post('/traccar-webhook', async (req, res) => {
+  try {
+    const body = req.body;
+    // Traccar sends position events
+    const position = body.position || body;
+    if (!position || !position.deviceId) {
+      return res.status(400).json({ error: 'Payload Traccar inválido' });
+    }
+
+    // Map Traccar attributes to IMEI — Traccar stores IMEI as device uniqueId
+    // The uniqueId in Traccar IS the device IMEI
+    const deviceIMEI = position.attributes?.uniqueId || position.uniqueId || String(position.deviceId);
+
+    const payload = {
+      gps: {
+        latitude: position.latitude || position.lat,
+        longitude: position.longitude || position.lon,
+        speed: position.speed ? Math.round(position.speed * 1.852) : 0, // knots → km/h
+        heading: position.course || position.bearing,
+        accuracy: position.accuracy,
+        altitude: position.altitude,
+      },
+      battery: position.attributes?.battery != null
+        ? { percentage: position.attributes.battery, voltage: position.attributes.power }
+        : undefined,
+      alarmSensor: position.attributes?.alarm === 'sos' || position.attributes?.alarm === 'panic'
+        ? { sos: true }
+        : undefined,
+    };
+
+    const result = await processGPSUpload(deviceIMEI, payload, req.io);
+    if (result.error) return res.status(result.status || 500).json({ error: result.error });
+    res.status(200).json({ message: 'Traccar webhook procesado', ...result });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─── Find Hub / Smart Tag HTTP endpoint ──────────────────────────────────────
+// Para dispositivos Smart Tag configurados con URL personalizada en la app Find Hub
+// Acepta múltiples formatos comunes de reportes HTTP de trackers chinos
+router.post('/find-hub', async (req, res) => {
+  try {
+    const body = req.body;
+
+    // Normalizar distintos formatos de payload
+    const deviceIMEI =
+      body.imei || body.deviceIMEI || body.IMEI || body.device_id ||
+      body.id || req.query.imei || req.query.id;
+
+    if (!deviceIMEI) {
+      return res.status(400).json({ error: 'IMEI no encontrado en el payload. Campos aceptados: imei, deviceIMEI, device_id, id' });
+    }
+
+    const lat = body.lat || body.latitude || body.gps?.lat || body.gps?.latitude || body.location?.lat;
+    const lng = body.lng || body.lon || body.longitude || body.gps?.lon || body.gps?.longitude || body.location?.lng;
+    const spd = body.speed || body.spd || body.gps?.speed;
+    const hdg = body.heading || body.course || body.dir || body.gps?.heading;
+    const bat = body.battery || body.bat || body.battery_level;
+
+    const payload = {
+      gps: lat != null && lng != null ? {
+        latitude: parseFloat(lat),
+        longitude: parseFloat(lng),
+        speed: spd != null ? parseFloat(spd) : undefined,
+        heading: hdg != null ? parseFloat(hdg) : undefined,
+      } : undefined,
+      battery: bat != null ? { percentage: parseFloat(bat) } : undefined,
+    };
+
+    const result = await processGPSUpload(String(deviceIMEI), payload, req.io);
+    if (result.error) return res.status(result.status || 500).json({ error: result.error });
+    res.status(200).json({ message: 'OK', ...result });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GET version for devices that report via URL query string (some Chinese trackers)
+// Example: GET /api/sensors/find-hub?imei=123456789&lat=-33.44&lng=-70.66&speed=45
+router.get('/find-hub', async (req, res) => {
+  try {
+    const { imei, lat, lng, lon, speed, heading, bat } = req.query;
+    const deviceIMEI = imei || req.query.id || req.query.device_id;
+    if (!deviceIMEI) return res.status(400).json({ error: 'IMEI requerido como query param ?imei=...' });
+
+    const latitude = parseFloat(lat);
+    const longitude = parseFloat(lng || lon);
+
+    const payload = {
+      gps: !isNaN(latitude) && !isNaN(longitude) ? {
+        latitude,
+        longitude,
+        speed: speed ? parseFloat(speed) : undefined,
+        heading: heading ? parseFloat(heading) : undefined,
+      } : undefined,
+      battery: bat ? { percentage: parseFloat(bat) } : undefined,
+    };
+
+    const result = await processGPSUpload(String(deviceIMEI), payload, req.io);
+    if (result.error) return res.status(result.status || 500).json({ error: result.error });
+    res.status(200).json({ message: 'OK', ...result });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 
 // Get sensor data for a vehicle
 router.get('/vehicle/:vehicleId', authenticate, async (req, res) => {
