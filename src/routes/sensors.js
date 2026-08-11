@@ -34,6 +34,17 @@ function resolveCity(lat, lng) {
   return { city: 'Chile', address: `${lat.toFixed(5)}, ${lng.toFixed(5)}` };
 }
 
+// ─── isSmartTagDevice ─────────────────────────────────────────────────────────
+// Smart Tags / BLE beacons have NO onboard sensors: no fuel, no RPM, no OBD2.
+// Their "speed" is always GPS position noise (drift), never real vehicle motion.
+function isSmartTagDevice(deviceModel) {
+  if (!deviceModel) return false;
+  const model = deviceModel.toLowerCase();
+  return ['xtag', 'smart tag', 'smarttag', 'beacon', 'tomvista', 'tagx',
+    'cx-xtag', 'xtag11', 'find hub', 'tile', 'airtag', 'galaxy tag', 'keyfi',
+  ].some(k => model.includes(k));
+}
+
 // ─── processGPSUpload ─────────────────────────────────────────────────────────
 // Core helper: receives an IMEI + GPS payload and updates ONLY that vehicle's location.
 // STRICTLY isolated: each IMEI maps to exactly ONE vehicle.
@@ -86,15 +97,20 @@ async function processGPSUpload(deviceIMEI, payload, io) {
     };
     alertLocation = { latitude: gps.latitude, longitude: gps.longitude, address: update.location.address };
 
+    // ─── Speed noise filter ───────────────────────────────────────────────────
+    // GPS devices always show position drift when stationary (±5-15m per sample),
+    // which registers as 5-15 km/h even when the vehicle is parked.
+    // We zero out any speed below 8 km/h as it's GPS noise, not real motion.
     if (typeof gps.speed === 'number') {
-      update.speed = Math.round(gps.speed);
+      const rawSpeed = Math.round(gps.speed);
+      update.speed = rawSpeed < 8 ? 0 : rawSpeed;  // ← noise filter
       // Speed alert > 120 km/h
-      if (gps.speed > 120) {
+      if (rawSpeed > 120) {
         const alert = await Alert.create({
           vehicle: vehicle._id, company: vehicle.company,
           type: 'speeding', severity: 'high',
-          message: `🚨 Exceso de velocidad: ${Math.round(gps.speed)} km/h en ${update.location.city}`,
-          location: alertLocation, triggerValue: gps.speed, threshold: 120,
+          message: `🚨 Exceso de velocidad: ${rawSpeed} km/h en ${update.location.city}`,
+          location: alertLocation, triggerValue: rawSpeed, threshold: 120,
         });
         if (io) broadcastAlert(io, vehicle._id, vehicle.company, alert);
       }
@@ -112,9 +128,15 @@ async function processGPSUpload(deviceIMEI, payload, io) {
     };
   }
 
-  // Fuel level
-  if (fuel && typeof fuel.level === 'number') {
+  // ─── Fuel level — ONLY for real GPS trackers, NOT Smart Tags ─────────────
+  // Smart Tags (BLE beacons) have zero sensors. Never store fuel data from them.
+  const isTag = isSmartTagDevice(vehicle.deviceModel);
+  if (!isTag && fuel && typeof fuel.level === 'number') {
     update['sensors.fuel'] = Math.min(100, Math.max(0, fuel.level));
+  }
+  // If this is a Smart Tag and the vehicle still has stale fuel data, clear it
+  if (isTag && vehicle.sensors?.fuel != null) {
+    update['sensors.fuel'] = null;
   }
 
   // Battery low alert

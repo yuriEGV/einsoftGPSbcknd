@@ -237,4 +237,32 @@ router.post('/:id/microphone', authenticate, requireRole('admin', 'fleet_manager
   }
 });
 
+// ─── POST /vehicles/:id/reset-location — Limpiar ubicación obsoleta ──────────
+// Permite limpiar coordenadas viejas de la DB cuando un vehículo muestra
+// una ubicación incorrecta heredada de otro dispositivo o de datos de prueba.
+router.post('/:id/reset-location', authenticate, requireRole('admin', 'fleet_manager', 'independent'), async (req, res) => {
+  try {
+    const filter = getVehicleScope(req.user, req.params.id);
+    const vehicle = await Vehicle.findOneAndUpdate(
+      filter,
+      {
+        $set: {
+          'location.coordinates': [0, 0],
+          'location.address': null,
+          'location.city': null,
+          'location.timestamp': null,
+          speed: 0,
+          'sensors.fuel': null,
+          status: 'offline',
+        },
+      },
+      { new: true }
+    );
+    if (!vehicle) return res.status(404).json({ error: 'Vehículo no encontrado o sin acceso' });
+    res.json({ message: 'Ubicación y datos de sensores reiniciados correctamente', vehicle });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;
