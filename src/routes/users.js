@@ -93,6 +93,33 @@ router.post('/change-password', authenticate, async (req, res) => {
   }
 });
 
+// Admin: Reset password for any user (admin only)
+router.post('/:id/reset-password', authenticate, authorize('admin', 'fleet_manager'), async (req, res) => {
+  try {
+    const { newPassword } = req.body;
+    if (!newPassword || newPassword.length < 6) {
+      return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+    }
+
+    let filter = { _id: req.params.id };
+    if (req.user.role !== 'admin') {
+      filter.company = req.user.company;
+    }
+
+    const targetUser = await User.findOne(filter);
+    if (!targetUser) {
+      return res.status(404).json({ error: 'Usuario no encontrado o no autorizado' });
+    }
+
+    targetUser.password = await bcrypt.hash(newPassword, 10);
+    await targetUser.save();
+
+    res.json({ message: 'Contraseña restablecida correctamente' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // Admin: Update user
 router.put('/:id', authenticate, authorize('admin', 'fleet_manager'), async (req, res) => {
   try {

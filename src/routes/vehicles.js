@@ -168,11 +168,8 @@ router.get('/:id/history', authenticate, async (req, res) => {
   try {
     const { hours = 24 } = req.query;
 
-    // Check ownership first (skip if Admin)
-    let filter = { _id: req.params.id };
-    if (req.user.role !== 'admin') {
-      filter.company = req.user.company;
-    }
+    // Check ownership using role-aware filter
+    const filter = buildVehicleFilter(req.user, req.params.id);
     const vehicle = await Vehicle.findOne(filter);
     if (!vehicle) {
       return res.status(404).json({ error: 'Vehicle not found or unauthorized' });
@@ -197,10 +194,7 @@ router.get('/:id/history', authenticate, async (req, res) => {
 router.post('/:id/motor-cut', authenticate, async (req, res) => {
   try {
     const { activate, rules } = req.body;
-    let filter = { _id: req.params.id };
-    if (req.user.role !== 'admin') {
-      filter.company = req.user.company;
-    }
+    const filter = buildVehicleFilter(req.user, req.params.id);
     const vehicle = await Vehicle.findOne(filter);
 
     if (!vehicle) {
@@ -241,10 +235,7 @@ router.post('/:id/motor-cut', authenticate, async (req, res) => {
 router.post('/:id/microphone', authenticate, async (req, res) => {
   try {
     const { activate } = req.body;
-    let filter = { _id: req.params.id };
-    if (req.user.role !== 'admin') {
-      filter.company = req.user.company;
-    }
+    const filter = buildVehicleFilter(req.user, req.params.id);
     const vehicle = await Vehicle.findOne(filter);
 
     if (!vehicle) return res.status(404).json({ error: 'Vehicle not found' });
@@ -268,10 +259,22 @@ router.get('/:id/stats', authenticate, async (req, res) => {
     const { days = 7 } = req.query;
     const startTime = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 
+    // Validate ownership
+    const ownerFilter = buildVehicleFilter(req.user, req.params.id);
+    const vehicle = await Vehicle.findOne(ownerFilter);
+    if (!vehicle) return res.status(404).json({ error: 'Vehicle not found or unauthorized' });
+
+    let vehicleObjectId;
+    try {
+      vehicleObjectId = new mongoose.Types.ObjectId(req.params.id);
+    } catch {
+      return res.status(400).json({ error: 'Invalid vehicle ID' });
+    }
+
     const data = await SensorData.aggregate([
       {
         $match: {
-          vehicle: mongoose.Types.ObjectId(req.params.id),
+          vehicle: vehicleObjectId,
           timestamp: { $gte: startTime },
         },
       },
@@ -280,7 +283,7 @@ router.get('/:id/stats', authenticate, async (req, res) => {
           _id: null,
           avgSpeed: { $avg: '$gps.speed' },
           maxSpeed: { $max: '$gps.speed' },
-          totalDistance: { $sum: '$gps.speed' },
+          dataPoints: { $sum: 1 },
           hardBrakings: {
             $sum: { $cond: [{ $gt: ['$accelerometer.x', 0.8] }, 1, 0] },
           },
@@ -296,7 +299,13 @@ router.get('/:id/stats', authenticate, async (req, res) => {
       },
     ]);
 
-    res.json(data[0] || {});
+    // Estimate distance: average speed * data points * 10s interval / 3600
+    const stats = data[0] || {};
+    if (stats.avgSpeed && stats.dataPoints) {
+      stats.estimatedDistanceKm = Math.round(stats.avgSpeed * stats.dataPoints * 10 / 3600);
+    }
+
+    res.json(stats);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
