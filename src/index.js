@@ -113,10 +113,13 @@ app.use((req, res) => {
 // Error Handler
 app.use(errorHandler);
 
-// In Vercel serverless, Vercel handles the HTTP listener itself.
-// However, we can manually route Socket.IO requests to the engine to avoid 404s
+// Safely handle Socket.io requests in serverless mode
 app.all('/socket.io/*', (req, res) => {
-  io.engine.handleRequest(req, res);
+  if (io && io.engine) {
+    io.engine.handleRequest(req, res);
+  } else {
+    res.status(200).json({ status: 'Socket.io disabled in Vercel serverless — HTTP polling active' });
+  }
 });
 
 if (process.env.VERCEL !== '1') {
