@@ -247,10 +247,14 @@ router.post('/:id/reset-location', authenticate, requireRole('admin', 'fleet_man
       filter,
       {
         $set: {
-          'location.coordinates': [0, 0],
-          'location.address': null,
-          'location.city': null,
-          'location.timestamp': null,
+          location: {
+            type: 'Point',
+            coordinates: [0, 0],
+            address: 'Esperando primer reporte GPS',
+            city: 'Valparaíso',
+            country: 'Chile',
+            timestamp: null,
+          },
           speed: 0,
           'sensors.fuel': null,
           status: 'offline',
@@ -259,6 +263,10 @@ router.post('/:id/reset-location', authenticate, requireRole('admin', 'fleet_man
       { new: true }
     );
     if (!vehicle) return res.status(404).json({ error: 'Vehículo no encontrado o sin acceso' });
+
+    // Clear old sensor history so previous position data is purged
+    await SensorData.deleteMany({ vehicle: req.params.id });
+
     res.json({ message: 'Ubicación y datos de sensores reiniciados correctamente', vehicle });
   } catch (error) {
     res.status(500).json({ error: error.message });
