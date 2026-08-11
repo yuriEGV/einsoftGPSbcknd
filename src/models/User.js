@@ -21,7 +21,7 @@ const userSchema = new mongoose.Schema({
   phone: String,
   role: {
     type: String,
-    enum: ['admin', 'fleet_manager', 'driver', 'viewer', 'independent'],
+    enum: ['admin', 'fleet_manager', 'driver', 'independent'],
     default: 'independent',
   },
   company: {

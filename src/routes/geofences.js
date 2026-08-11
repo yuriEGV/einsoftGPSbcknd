@@ -1,33 +1,19 @@
 import express from 'express';
 import Geofence from '../models/Geofence.js';
 import Vehicle from '../models/Vehicle.js';
-import Company from '../models/Company.js';
-import User from '../models/User.js';
 import { authenticate } from '../middleware/auth.js';
+import { requireRole, getGeofenceScope, getVehicleScope } from '../middleware/scope.js';
 
 const router = express.Router();
 
-// Helper: resolve company for the request user
-// Super admins may not have company in their JWT — look it up from DB or use first available
-async function resolveCompany(req) {
-  if (req.user.company) return req.user.company;
-  // Try fetching from DB
-  const user = await User.findById(req.user.id).select('company');
-  if (user?.company) return user.company;
-  // Super admin fallback: use first company
-  const firstCompany = await Company.findOne().select('_id');
-  return firstCompany?._id || null;
-}
-
-// Create geofence
-router.post('/', authenticate, async (req, res) => {
+// ─── POST /geofences — Crear geocerca (admin, fleet_manager, independent) ────
+router.post('/', authenticate, requireRole('admin', 'fleet_manager', 'independent'), async (req, res) => {
   try {
     const geofence = new Geofence({
       ...req.body,
       company: req.user.company || undefined,
       creator: req.user.id,
     });
-
     await geofence.save();
     res.status(201).json(geofence);
   } catch (error) {
@@ -35,117 +21,86 @@ router.post('/', authenticate, async (req, res) => {
   }
 });
 
-
-// Get all geofences
+// ─── GET /geofences — Listar geocercas según scope del rol ────────────────────
 router.get('/', authenticate, async (req, res) => {
   try {
-    let query = {};
-    if (req.user.company) {
-      query.company = req.user.company;
-    } else if (req.user.role !== 'admin') {
-      query.$or = [
-        { creator: req.user.id },
-        { company: null }
-      ];
+    const scope = getGeofenceScope(req.user);
+    if (scope === null) {
+      return res.status(403).json({ error: 'Conductores no tienen acceso a geocercas' });
     }
-    const geofences = await Geofence.find(query)
-      .populate('assignedVehicles', 'licensePlate');
 
+    const geofences = await Geofence.find(scope).populate('assignedVehicles', 'licensePlate');
     res.json(geofences);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-
-// Get geofence by ID
+// ─── GET /geofences/:id — Detalle de geocerca ─────────────────────────────────
 router.get('/:id', authenticate, async (req, res) => {
   try {
-    let filter = { _id: req.params.id };
-    if (req.user.company) {
-      filter.company = req.user.company;
-    } else if (req.user.role !== 'admin') {
-      return res.status(403).json({ error: 'No autorizado: Sin contexto de empresa' });
+    const scope = getGeofenceScope(req.user);
+    if (scope === null) {
+      return res.status(403).json({ error: 'Sin acceso a geocercas' });
     }
-    const geofence = await Geofence.findOne(filter)
+
+    const geofence = await Geofence.findOne({ _id: req.params.id, ...scope })
       .populate('assignedVehicles');
 
-    if (!geofence) {
-      return res.status(404).json({ error: 'Geofence not found or unauthorized' });
-    }
-
+    if (!geofence) return res.status(404).json({ error: 'Geocerca no encontrada o sin acceso' });
     res.json(geofence);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Update geofence
-router.put('/:id', authenticate, async (req, res) => {
+// ─── PUT /geofences/:id — Editar geocerca (admin, fleet_manager, independent) ─
+router.put('/:id', authenticate, requireRole('admin', 'fleet_manager', 'independent'), async (req, res) => {
   try {
-    const companyId = await resolveCompany(req);
+    const scope = getGeofenceScope(req.user);
     const geofence = await Geofence.findOneAndUpdate(
-      { _id: req.params.id, ...(companyId ? { company: companyId } : {}) },
+      { _id: req.params.id, ...scope },
       req.body,
       { new: true }
     );
-
-    if (!geofence) {
-      return res.status(404).json({ error: 'Geofence not found or unauthorized' });
-    }
-
+    if (!geofence) return res.status(404).json({ error: 'Geocerca no encontrada o sin acceso' });
     res.json(geofence);
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Delete geofence
-router.delete('/:id', authenticate, async (req, res) => {
+// ─── DELETE /geofences/:id — Eliminar geocerca (admin, fleet_manager, independent) ─
+router.delete('/:id', authenticate, requireRole('admin', 'fleet_manager', 'independent'), async (req, res) => {
   try {
-    const companyId = await resolveCompany(req);
-    const geofence = await Geofence.findOneAndDelete({
-      _id: req.params.id,
-      ...(companyId ? { company: companyId } : {})
-    });
-
-    if (!geofence) {
-      return res.status(404).json({ error: 'Geofence not found or unauthorized' });
-    }
-
-    res.json({ message: 'Geofence deleted' });
+    const scope = getGeofenceScope(req.user);
+    const geofence = await Geofence.findOneAndDelete({ _id: req.params.id, ...scope });
+    if (!geofence) return res.status(404).json({ error: 'Geocerca no encontrada o sin acceso' });
+    res.json({ message: 'Geocerca eliminada' });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
 });
 
-// Check if vehicles are inside geofence
-router.post('/:id/check-vehicles', authenticate, async (req, res) => {
+// ─── POST /geofences/:id/check-vehicles — Verificar vehículos en zona ────────
+router.post('/:id/check-vehicles', authenticate, requireRole('admin', 'fleet_manager'), async (req, res) => {
   try {
-    const geofence = await Geofence.findById(req.params.id);
-    if (!geofence) return res.status(404).json({ error: 'Geofence not found' });
+    const scope = getGeofenceScope(req.user);
+    const geofence = await Geofence.findOne({ _id: req.params.id, ...scope });
+    if (!geofence) return res.status(404).json({ error: 'Geocerca no encontrada o sin acceso' });
 
-    let query = { company: req.user.company };
+    // Solo buscar vehículos dentro del scope del usuario
+    const vehicleScope = getVehicleScope(req.user);
+    let query = { ...vehicleScope };
 
     if (geofence.geometry.type === 'Polygon') {
-      query.location = {
-        $geoWithin: {
-          $geometry: geofence.geometry,
-        },
-      };
+      query.location = { $geoWithin: { $geometry: geofence.geometry } };
     } else if (geofence.geometry.type === 'Point' && geofence.radius) {
-      // Circle detection using $centerSphere: [ [lng, lat], radius_in_radians ]
-      // Earth radius approx 6378.1 km
       const radiusInRadians = geofence.radius / 6378100;
-      query.location = {
-        $geoWithin: {
-          $centerSphere: [geofence.geometry.coordinates, radiusInRadians],
-        },
-      };
+      query.location = { $geoWithin: { $centerSphere: [geofence.geometry.coordinates, radiusInRadians] } };
     }
 
     const vehiclesInside = await Vehicle.find(query);
-
     res.json({
       geofenceId: req.params.id,
       geofenceName: geofence.name,
