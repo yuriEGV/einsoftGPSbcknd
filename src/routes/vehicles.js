@@ -267,6 +267,12 @@ router.post('/:id/reset-location', authenticate, requireRole('admin', 'fleet_man
     // Clear old sensor history so previous position data is purged
     await SensorData.deleteMany({ vehicle: req.params.id });
 
+    res.json({ message: 'Ubicación y datos de sensores reiniciados correctamente', vehicle });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ─── POST /vehicles/:id/set-location — Actualizar ubicación manualmente ──────
 router.post('/:id/set-location', authenticate, requireRole('admin', 'fleet_manager', 'independent'), async (req, res) => {
   try {
