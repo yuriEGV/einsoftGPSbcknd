@@ -267,7 +267,44 @@ router.post('/:id/reset-location', authenticate, requireRole('admin', 'fleet_man
     // Clear old sensor history so previous position data is purged
     await SensorData.deleteMany({ vehicle: req.params.id });
 
-    res.json({ message: 'Ubicación y datos de sensores reiniciados correctamente', vehicle });
+// ─── POST /vehicles/:id/set-location — Actualizar ubicación manualmente ──────
+router.post('/:id/set-location', authenticate, requireRole('admin', 'fleet_manager', 'independent'), async (req, res) => {
+  try {
+    const { latitude, longitude, address, city } = req.body;
+    if (typeof latitude !== 'number' || typeof longitude !== 'number') {
+      return res.status(400).json({ error: 'Latitud y longitud son requeridas' });
+    }
+
+    const filter = getVehicleScope(req.user, req.params.id);
+    const vehicle = await Vehicle.findOneAndUpdate(
+      filter,
+      {
+        $set: {
+          location: {
+            type: 'Point',
+            coordinates: [longitude, latitude],
+            address: address || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`,
+            city: city || 'Valparaíso (Placeres)',
+            country: 'Chile',
+            timestamp: new Date(),
+          },
+          status: 'active',
+          lastUpdate: new Date(),
+        },
+      },
+      { new: true }
+    );
+    if (!vehicle) return res.status(404).json({ error: 'Vehículo no encontrado o sin acceso' });
+
+    // Record in SensorData history
+    await SensorData.create({
+      deviceIMEI: vehicle.deviceIMEI || 'MANUAL',
+      vehicle: vehicle._id,
+      gps: { latitude, longitude, speed: 0, heading: 0 },
+      timestamp: new Date(),
+    });
+
+    res.json({ message: 'Ubicación actualizada correctamente', vehicle });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }

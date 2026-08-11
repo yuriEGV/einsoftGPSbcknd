@@ -11,12 +11,23 @@ const router = express.Router();
 
 // ─── resolveCity ─────────────────────────────────────────────────────────────
 // Returns a human-readable city name for Chilean coordinates.
-// Falls back to lat/lng string for unknown locations instead of copying old location data.
+// Accurately distinguishes Cerro Placeres, Playa Ancha, Viña del Mar, etc.
 function resolveCity(lat, lng) {
-  // Valparaíso / Viña del Mar
+  // Valparaíso region
   if (lat < -32.8 && lat > -33.2 && lng < -71.3 && lng > -71.8) {
-    const isVina = lat < -33.02 && lng > -71.58;
-    return { city: isVina ? 'Viña del Mar' : 'Valparaíso', address: isVina ? 'Viña del Mar, Región de Valparaíso' : 'Valparaíso, Región de Valparaíso' };
+    // Cerro Placeres / Universidad Santa María area (lng > -71.60 and lat > -33.05)
+    if (lng > -71.61 && lat < -33.02) {
+      return { city: 'Valparaíso (Cerro Placeres)', address: 'Cerro Placeres, Valparaíso' };
+    }
+    // Viña del Mar
+    if (lat < -33.01 && lng > -71.58) {
+      return { city: 'Viña del Mar', address: 'Viña del Mar, Región de Valparaíso' };
+    }
+    // Playa Ancha (lng < -71.62)
+    if (lng < -71.62) {
+      return { city: 'Valparaíso (Playa Ancha)', address: 'Playa Ancha, Valparaíso' };
+    }
+    return { city: 'Valparaíso', address: 'Valparaíso, Región de Valparaíso' };
   }
   // Santiago RM
   if (lat < -33.2 && lat > -33.75 && lng < -70.35 && lng > -70.85) {
