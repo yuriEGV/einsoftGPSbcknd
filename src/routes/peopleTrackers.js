@@ -26,7 +26,22 @@ router.get('/', authenticate, async (req, res) => {
     }
 
     const trackers = await PersonTracker.find(filter).sort({ updatedAt: -1 });
-    res.json(trackers);
+    const processed = trackers.map(t => {
+      const obj = t.toObject();
+      // If location was never reported or is the old default placeholder, zero it out
+      if (!obj.hasReportedLocation || (obj.location?.coordinates?.[0] === -70.64827 && obj.location?.coordinates?.[1] === -33.45694)) {
+        obj.hasReportedLocation = false;
+        obj.location = {
+          type: 'Point',
+          coordinates: [0, 0],
+          address: 'Sin señal GPS inicial (Esperando conexión del teléfono)',
+          timestamp: obj.location?.timestamp || obj.updatedAt,
+        };
+      }
+      return obj;
+    });
+
+    res.json(processed);
   } catch (error) {
     console.error('Error GET /api/people-trackers:', error);
     res.status(500).json({ error: error.message || 'Error al obtener la lista de personas' });
