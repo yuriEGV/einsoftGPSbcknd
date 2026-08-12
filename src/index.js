@@ -15,8 +15,10 @@ import alertRoutes from './routes/alerts.js';
 import reportRoutes from './routes/reports.js';
 import userRoutes from './routes/users.js';
 import companyRoutes from './routes/companies.js';
+import peopleTrackerRoutes from './routes/peopleTrackers.js';
 import mongoose from 'mongoose';
 import './models/Alert.js'; // Ensure Alert model is registered early
+import './models/PersonTracker.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { requestLogger } from './middleware/logger.js';
 
@@ -104,6 +106,7 @@ app.use('/api/alerts', alertRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/companies', companyRoutes);
+app.use('/api/people-trackers', peopleTrackerRoutes);
 
 // 404 Handler
 app.use((req, res) => {

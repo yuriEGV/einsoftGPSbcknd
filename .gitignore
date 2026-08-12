@@ -1,0 +1,6 @@
+node_modules
+.env
+check_db*.js
+restore_admin*.js
+update_placeres.js
+.vercel

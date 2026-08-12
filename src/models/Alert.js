@@ -4,7 +4,12 @@ const alertSchema = new mongoose.Schema({
   vehicle: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Vehicle',
-    required: true,
+    required: false,
+  },
+  personTracker: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'PersonTracker',
+    required: false,
   },
   company: {
     type: mongoose.Schema.Types.ObjectId,
