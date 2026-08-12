@@ -15,19 +15,20 @@ const router = express.Router();
 function resolveCity(lat, lng) {
   // Valparaíso region
   if (lat < -32.8 && lat > -33.2 && lng < -71.3 && lng > -71.8) {
-    // Cerro Placeres / Universidad Santa María area (lng > -71.60 and lat > -33.05)
-    if (lng > -71.61 && lat < -33.02) {
+    // Cerro Placeres / USM / Portales area (lng between -71.585 and -71.615)
+    if (lng >= -71.615 && lng <= -71.585) {
       return { city: 'Valparaíso (Cerro Placeres)', address: 'Cerro Placeres, Valparaíso' };
     }
-    // Viña del Mar
-    if (lat < -33.01 && lng > -71.58) {
+    // Viña del Mar (east of -71.585)
+    if (lng > -71.585) {
       return { city: 'Viña del Mar', address: 'Viña del Mar, Región de Valparaíso' };
     }
-    // Playa Ancha (lng < -71.62)
-    if (lng < -71.62) {
+    // Playa Ancha (west of -71.628)
+    if (lng < -71.628) {
       return { city: 'Valparaíso (Playa Ancha)', address: 'Playa Ancha, Valparaíso' };
     }
-    return { city: 'Valparaíso', address: 'Valparaíso, Región de Valparaíso' };
+    // Valparaíso Centro / Almendral (-71.615 to -71.628)
+    return { city: 'Valparaíso (Centro)', address: 'Valparaíso, Región de Valparaíso' };
   }
   // Santiago RM
   if (lat < -33.2 && lat > -33.75 && lng < -70.35 && lng > -70.85) {

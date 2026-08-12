@@ -71,7 +71,7 @@ const personTrackerSchema = new mongoose.Schema({
     },
     coordinates: {
       type: [Number], // [longitude, latitude]
-      default: [-70.64827, -33.45694], // Default Santiago, Chile or 0,0
+      default: [-70.64827, -33.45694],
     },
     address: {
       type: String,
@@ -92,4 +92,4 @@ const personTrackerSchema = new mongoose.Schema({
 
 personTrackerSchema.index({ 'location.coordinates': '2dsphere' });
 
-export default mongoose.model('PersonTracker', personTrackerSchema);
+export default mongoose.models.PersonTracker || mongoose.model('PersonTracker', personTrackerSchema);

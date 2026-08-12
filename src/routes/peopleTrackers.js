@@ -14,19 +14,22 @@ function generateTrackerCode() {
 // ─── GET /api/people-trackers — List tracked people ──────────────────────────
 router.get('/', authenticate, async (req, res) => {
   try {
+    const userId = req.user?.id || req.user?._id;
     let filter = {};
-    if (req.user.role === 'admin' && !req.user.company) {
+
+    if (req.user?.role === 'admin' && !req.user?.company) {
       filter = {};
-    } else if (req.user.company) {
+    } else if (req.user?.company) {
       filter = { company: req.user.company };
     } else {
-      filter = { user: req.user._id };
+      filter = { user: userId };
     }
 
     const trackers = await PersonTracker.find(filter).sort({ updatedAt: -1 });
     res.json(trackers);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error GET /api/people-trackers:', error);
+    res.status(500).json({ error: error.message || 'Error al obtener la lista de personas' });
   }
 });
 
@@ -39,27 +42,34 @@ router.post('/', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'El nombre de la persona es obligatorio.' });
     }
 
+    const userId = req.user?.id || req.user?._id;
+    if (!userId) {
+      return res.status(401).json({ error: 'Sesión de usuario no válida o expirable.' });
+    }
+
     let trackerCode = generateTrackerCode();
-    // Ensure uniqueness
     let exists = await PersonTracker.findOne({ trackerCode });
     while (exists) {
       trackerCode = generateTrackerCode();
       exists = await PersonTracker.findOne({ trackerCode });
     }
 
+    const companyId = (req.user?.company && req.user.company !== '') ? req.user.company : null;
+
     const newPerson = new PersonTracker({
       name: name.trim(),
-      phone: phone || '',
+      phone: phone ? phone.trim() : '',
       roleDescription: roleDescription || 'Familiar / Personal',
       trackerCode,
-      user: req.user._id,
-      company: req.user.company || null,
+      user: userId,
+      company: companyId,
     });
 
     await newPerson.save();
     res.status(201).json(newPerson);
   } catch (error) {
-    res.status(500).json({ error: error.message });
+    console.error('Error POST /api/people-trackers:', error);
+    res.status(500).json({ error: error.message || 'Error al registrar la persona en el servidor' });
   }
 });
 
@@ -72,6 +82,7 @@ router.get('/public/:trackerCode', async (req, res) => {
     }
     res.json(tracker);
   } catch (error) {
+    console.error('Error GET /public/:trackerCode:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -99,26 +110,24 @@ router.post('/public/:trackerCode/location', async (req, res) => {
     if (batteryLevel !== undefined) tracker.batteryLevel = Math.max(0, Math.min(100, Number(batteryLevel)));
     if (gpsAccuracy !== undefined) tracker.gpsAccuracy = Number(gpsAccuracy);
 
-    // Update status if it was offline
     if (tracker.status === 'offline') {
       tracker.status = 'normal';
     }
 
     await tracker.save();
 
-    // Broadcast via Socket.IO if active
     if (req.io) {
       req.io.emit('person_location_update', tracker);
     }
 
     res.json({ success: true, tracker });
   } catch (error) {
+    console.error('Error POST /location:', error);
     res.status(500).json({ error: error.message });
   }
 });
 
 // ─── POST /api/people-trackers/public/:trackerCode/panic ───────────────────
-// Trigger SOS Panic from Phone
 router.post('/public/:trackerCode/panic', async (req, res) => {
   try {
     const { active, message, latitude, longitude } = req.body;
@@ -147,7 +156,6 @@ router.post('/public/:trackerCode/panic', async (req, res) => {
         };
       }
 
-      // Create an entry in Alert collection for history & notification
       const alert = new Alert({
         company: tracker.company || tracker.user,
         personTracker: tracker._id,
@@ -168,7 +176,6 @@ router.post('/public/:trackerCode/panic', async (req, res) => {
         req.io.emit('person_panic_alert', { tracker, alert });
       }
     } else {
-      // Deactivate Panic
       tracker.status = 'normal';
       tracker.panicAlert.active = false;
       tracker.panicAlert.resolvedAt = new Date();
@@ -181,6 +188,7 @@ router.post('/public/:trackerCode/panic', async (req, res) => {
     await tracker.save();
     res.json({ success: true, tracker });
   } catch (error) {
+    console.error('Error POST /panic:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -230,6 +238,7 @@ router.post('/:id/panic', authenticate, async (req, res) => {
     await tracker.save();
     res.json(tracker);
   } catch (error) {
+    console.error('Error admin POST /panic:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -243,6 +252,7 @@ router.delete('/:id', authenticate, async (req, res) => {
     }
     res.json({ message: 'Registro de rastreo eliminado exitosamente.' });
   } catch (error) {
+    console.error('Error DELETE /people-trackers:', error);
     res.status(500).json({ error: error.message });
   }
 });
