@@ -97,13 +97,14 @@ router.post('/public/:trackerCode/location', async (req, res) => {
       return res.status(404).json({ error: 'Rastreador no encontrado.' });
     }
 
-    if (latitude !== undefined && longitude !== undefined) {
+    if (latitude !== undefined && longitude !== undefined && (Number(latitude) !== 0 || Number(longitude) !== 0)) {
       tracker.location = {
         type: 'Point',
         coordinates: [Number(longitude), Number(latitude)],
         address: address || tracker.location?.address || 'Coordenadas desde Celular',
         timestamp: new Date(),
       };
+      tracker.hasReportedLocation = true;
     }
 
     if (speed !== undefined) tracker.speed = Number(speed);

@@ -63,6 +63,10 @@ const personTrackerSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  hasReportedLocation: {
+    type: Boolean,
+    default: false,
+  },
   location: {
     type: {
       type: String,
@@ -71,11 +75,11 @@ const personTrackerSchema = new mongoose.Schema({
     },
     coordinates: {
       type: [Number], // [longitude, latitude]
-      default: [-70.64827, -33.45694],
+      default: [0, 0],
     },
     address: {
       type: String,
-      default: 'Ubicación no reportada',
+      default: 'Sin señal GPS inicial (Esperando conexión del teléfono)',
     },
     timestamp: {
       type: Date,
