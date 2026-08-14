@@ -12,7 +12,7 @@ const router = express.Router();
 // ─── resolveCity ─────────────────────────────────────────────────────────────
 // Returns a human-readable city name for Chilean coordinates.
 // Accurately distinguishes Cerro Placeres, Playa Ancha, Viña del Mar, etc.
-function resolveCity(lat, lng) {
+export function resolveCity(lat, lng) {
   // Valparaíso region
   if (lat < -32.8 && lat > -33.2 && lng < -71.3 && lng > -71.8) {
     // Cerro Placeres / USM / Portales area (lng between -71.585 and -71.615)

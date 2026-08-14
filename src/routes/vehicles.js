@@ -5,6 +5,7 @@ import SensorData from '../models/SensorData.js';
 import { authenticate } from '../middleware/auth.js';
 import { requireRole, getVehicleScope } from '../middleware/scope.js';
 import { broadcastVehicleUpdate } from '../socket/index.js';
+import { resolveCity } from './sensors.js';
 
 const router = express.Router();
 
@@ -276,11 +277,12 @@ router.post('/:id/reset-location', authenticate, requireRole('admin', 'fleet_man
 // ─── POST /vehicles/:id/set-location — Actualizar ubicación manualmente ──────
 router.post('/:id/set-location', authenticate, requireRole('admin', 'fleet_manager', 'independent'), async (req, res) => {
   try {
-    const { latitude, longitude, address, city } = req.body;
+    const { latitude, longitude, address: customAddress, city: customCity } = req.body;
     if (typeof latitude !== 'number' || typeof longitude !== 'number') {
       return res.status(400).json({ error: 'Latitud y longitud son requeridas' });
     }
 
+    const resolved = resolveCity(latitude, longitude);
     const filter = getVehicleScope(req.user, req.params.id);
     const vehicle = await Vehicle.findOneAndUpdate(
       filter,
@@ -289,8 +291,8 @@ router.post('/:id/set-location', authenticate, requireRole('admin', 'fleet_manag
           location: {
             type: 'Point',
             coordinates: [longitude, latitude],
-            address: address || `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`,
-            city: city || 'Valparaíso (Placeres)',
+            address: customAddress || resolved.address,
+            city: customCity || resolved.city,
             country: 'Chile',
             timestamp: new Date(),
           },
