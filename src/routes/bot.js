@@ -194,7 +194,8 @@ router.post('/panics/:id/resolve', authenticate, async (req, res) => {
 });
 
 // ─── POST /api/bot/chat — Direct Web AI Chat (Gemini 3.6 Flash) ─────────────
-router.post('/chat', async (req, res) => {
+// Protegido con authenticate: solo usuarios autenticados del sistema consumen la IA
+router.post('/chat', authenticate, async (req, res) => {
   try {
     const { prompt, history } = req.body;
     if (!prompt) return res.status(400).json({ error: 'El mensaje prompt es requerido' });
