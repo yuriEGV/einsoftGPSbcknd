@@ -23,7 +23,7 @@ import PanicAlert from '../models/PanicAlert.js';
 
 const router = express.Router();
 
-const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || 'einsoft-gps-secret';
+const WEBHOOK_SECRET = process.env.TELEGRAM_WEBHOOK_SECRET || 'einsoft-gps-secret-2024';
 
 // ─── POST /api/bot/webhook — Telegram sends all updates here ─────────────────
 router.post('/webhook', async (req, res) => {
