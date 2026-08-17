@@ -6,6 +6,7 @@ import Geofence from '../models/Geofence.js';
 import Alert from '../models/Alert.js';
 import { authenticate } from '../middleware/auth.js';
 import { broadcastAlert } from '../socket/index.js';
+import { analyzeVehicle } from '../services/alertEngine.js';
 
 const router = express.Router();
 
@@ -186,6 +187,12 @@ async function processGPSUpload(deviceIMEI, payload, io) {
       lastUpdate: now,
     });
   }
+
+  // ── Run alert engine (Telegram notifications, panic detection, etc.) ────────
+  // Fire-and-forget: never blocks GPS response
+  analyzeVehicle(updatedVehicle, payload, io).catch(err =>
+    console.error('[alertEngine] background error:', err.message)
+  );
 
   return {
     vehicleId: updatedVehicle._id,

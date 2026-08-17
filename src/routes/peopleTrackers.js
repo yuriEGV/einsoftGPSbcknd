@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import PersonTracker from '../models/PersonTracker.js';
 import Alert from '../models/Alert.js';
 import { authenticate } from '../middleware/auth.js';
+import { analyzePerson } from '../services/alertEngine.js';
 
 const router = express.Router();
 
@@ -187,6 +188,11 @@ router.post('/public/:trackerCode/panic', async (req, res) => {
         notificationChannels: ['dashboard', 'sound'],
       });
       await alert.save();
+
+      // ── Alert Engine ── Notify Telegram for person panic ────────────────
+      analyzePerson(tracker, true).catch(err =>
+        console.error('[alertEngine] person panic error:', err.message)
+      );
 
       if (req.io) {
         req.io.emit('person_panic_alert', { tracker, alert });
