@@ -5,7 +5,7 @@
  */
 import axios from 'axios';
 
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || '8505291976:AAFiWVvgvRH69GJPmI-dYpod0liNMA1QJjM';
 const BASE_URL = `https://api.telegram.org/bot${BOT_TOKEN}`;
 
 // ─── Core sender ─────────────────────────────────────────────────────────────
