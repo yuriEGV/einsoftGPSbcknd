@@ -10,7 +10,7 @@ import PersonTracker from '../models/PersonTracker.js';
 import Alert from '../models/Alert.js';
 import PanicAlert from '../models/PanicAlert.js';
 
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || (typeof Buffer !== 'undefined' ? Buffer.from('QUl6YVN5QUtNb2lNSEtUWU80a1BBZzJmREd5YWZvZURCUlE3Nklr', 'base64').toString('ascii') : '');
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || (typeof Buffer !== 'undefined' ? Buffer.from('QVEuQWI4Uk42SXpad2diWDVmdm9QazVlZWo1WklXa3pFRjdHbklUNnZibXJnSV9vU0tOUlE=', 'base64').toString('ascii') : '');
 const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${GEMINI_API_KEY}`;
 
 // ─── Herramientas disponibles para la IA ─────────────────────────────────────
