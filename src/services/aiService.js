@@ -11,7 +11,7 @@ import Alert from '../models/Alert.js';
 import PanicAlert from '../models/PanicAlert.js';
 
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+const GEMINI_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.6-flash:generateContent?key=${GEMINI_API_KEY}`;
 
 // ─── Herramientas disponibles para la IA ─────────────────────────────────────
 const TOOLS = [
