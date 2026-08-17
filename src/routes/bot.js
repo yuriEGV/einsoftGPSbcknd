@@ -34,23 +34,19 @@ router.post('/webhook', async (req, res) => {
     return res.status(403).end();
   }
 
-  // Respond immediately so Telegram doesn't retry
-  res.status(200).end();
-
   const update = req.body;
 
-  // Dispatch async (don't await — webhook must return fast)
-  setImmediate(async () => {
-    try {
-      if (update.message) {
-        await handleMessage(update.message);
-      } else if (update.callback_query) {
-        await handleCallbackQuery(update.callback_query);
-      }
-    } catch (err) {
-      console.error('[Bot] Webhook dispatch error:', err.message);
+  try {
+    if (update.message) {
+      await handleMessage(update.message);
+    } else if (update.callback_query) {
+      await handleCallbackQuery(update.callback_query);
     }
-  });
+  } catch (err) {
+    console.error('[Bot] Webhook dispatch error:', err.message);
+  }
+
+  res.status(200).json({ ok: true });
 });
 
 // ─── POST /api/bot/setup-webhook — Register webhook with Telegram ────────────

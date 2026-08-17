@@ -284,6 +284,77 @@ export async function askAI(userMessage, conversationHistory = []) {
 // ─── Fallback Diagnostic Engine ──────────────────────────────────────────────
 async function generateFallbackAnalysis(userMessage) {
   try {
+    const q = (userMessage || '').toLowerCase();
+
+    // 1. Specific Query: ALERTS & PANIC
+    if (q.includes('alerta') || q.includes('pánico') || q.includes('panico') || q.includes('sos') || q.includes('emergencia') || q.includes('crítica') || q.includes('critica')) {
+      const panics = await executeTool('getActivePanics', {});
+      const alerts = await Alert.find({ acknowledged: false }).limit(10).lean();
+
+      let res = `🚨 **Informe de Alertas & Emergencias SOS**\n\n`;
+      if (panics.length > 0) {
+        res += `⚠️ **Pánicos SOS Activos (${panics.length}):**\n`;
+        panics.forEach(p => {
+          res += `• **${p.entityName}** (${p.type === 'vehicle' ? 'Vehículo' : 'Persona'}) — 📍 ${p.address}\n`;
+        });
+      } else {
+        res += `✅ **Pánicos SOS:** No hay emergencias de pánico activas en este momento.\n`;
+      }
+
+      if (alerts.length > 0) {
+        res += `\n🔔 **Alertas Sin Reconocer (${alerts.length}):**\n`;
+        alerts.forEach(a => {
+          res += `• **${a.type?.replace('_', ' ')}** — ${a.message || 'Alerta de velocidad/geocerca'}\n`;
+        });
+      } else {
+        res += `\n✅ **Alertas Generales:** No hay alertas de velocidad o geocerca pendientes.\n`;
+      }
+
+      res += `\n💡 **Acción recomendada:** En Telegram puedes escribir /panico para gestionar o resolver alertas activas.`;
+      return res;
+    }
+
+    // 2. Specific Query: VEHICLES & MOVEMENT
+    if (q.includes('activo') || q.includes('movimiento') || q.includes('andando') || q.includes('ruta') || q.includes('vehículo') || q.includes('vehiculo') || q.includes('auto')) {
+      const vehicles = await executeTool('getVehicles', {});
+      const active = vehicles.filter(v => v.status === 'active');
+
+      let res = `🚗 **Informe de Vehículos en la Flota**\n\n`;
+      res += `🟢 **Vehículos Activos (${active.length} de ${vehicles.length}):**\n`;
+      if (active.length > 0) {
+        active.forEach(v => {
+          res += `• **${v.plate}** (${v.make || 'Vehículo'}) — ${v.speed || 0} km/h | 📍 ${v.address}\n`;
+        });
+      } else {
+        res += `• No hay unidades en movimiento reportando en este momento.\n`;
+      }
+
+      const offline = vehicles.filter(v => v.status === 'offline');
+      if (offline.length > 0) {
+        res += `\n🔴 **Unidades Offline (${offline.length}):**\n`;
+        offline.forEach(v => {
+          res += `• **${v.plate}** (${v.make || 'Vehículo'}) — Última señal: ${v.address}\n`;
+        });
+      }
+      return res;
+    }
+
+    // 3. Specific Query: PEOPLE / PERSONAL
+    if (q.includes('persona') || q.includes('personal') || q.includes('familiar') || q.includes('celular') || q.includes('rastreado')) {
+      const persons = await executeTool('getPersons', {});
+
+      let res = `👥 **Informe de Personal & Rastreadores Celulares**\n\n`;
+      if (persons.length > 0) {
+        persons.forEach(p => {
+          res += `• **${p.name}** — Batería: ${p.batteryLevel}% | 📍 ${p.address || 'Posición reportada'}\n`;
+        });
+      } else {
+        res += `• No hay personal rastreado registrado en el sistema.\n`;
+      }
+      return res;
+    }
+
+    // 4. Default Query: Full Fleet Diagnostic Summary
     const summary = await executeTool('getFleetSummary', {});
     const vehicles = await executeTool('getVehicles', {});
     const panics = await executeTool('getActivePanics', {});
@@ -297,7 +368,7 @@ async function generateFallbackAnalysis(userMessage) {
     if (vehicles.length > 0) {
       response += `📋 **Resumen de Unidades:**\n`;
       vehicles.slice(0, 5).forEach(v => {
-        response += `• <b>${v.plate}</b> (${v.make || 'Vehículo'}) — ${v.status === 'active' ? '🟢 Activo' : '🔴 Offline'} | 📍 ${v.address}\n`;
+        response += `• **${v.plate}** (${v.make || 'Vehículo'}) — ${v.status === 'active' ? '🟢 Activo' : '🔴 Offline'} | 📍 ${v.address}\n`;
       });
     }
 
