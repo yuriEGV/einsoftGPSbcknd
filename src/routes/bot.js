@@ -17,6 +17,7 @@ import { authenticate } from '../middleware/auth.js';
 import { handleMessage, handleCallbackQuery } from '../services/botHandler.js';
 import { setWebhook, getWebhookInfo, sendMessage } from '../services/telegramService.js';
 import { acknowledgePanic, resolvePanic } from '../services/alertEngine.js';
+import { askAI } from '../services/aiService.js';
 import BotUser from '../models/BotUser.js';
 import PanicAlert from '../models/PanicAlert.js';
 
@@ -188,6 +189,20 @@ router.post('/panics/:id/resolve', authenticate, async (req, res) => {
     if (!panic) return res.status(404).json({ error: 'Panic alert not found' });
     res.json(panic);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST /api/bot/chat — Direct Web AI Chat (Gemini 3.6 Flash) ─────────────
+router.post('/chat', async (req, res) => {
+  try {
+    const { prompt, history } = req.body;
+    if (!prompt) return res.status(400).json({ error: 'El mensaje prompt es requerido' });
+
+    const aiResponse = await askAI(prompt, history || []);
+    res.json({ response: aiResponse });
+  } catch (err) {
+    console.error('Error en POST /api/bot/chat:', err);
     res.status(500).json({ error: err.message });
   }
 });

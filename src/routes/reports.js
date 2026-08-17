@@ -5,6 +5,7 @@ import { requireRole, getVehicleScope } from '../middleware/scope.js';
 import SensorData from '../models/SensorData.js';
 import Vehicle from '../models/Vehicle.js';
 import Alert from '../models/Alert.js';
+import { askAI } from '../services/aiService.js';
 
 const router = express.Router();
 
@@ -107,6 +108,22 @@ router.post('/schedule', authenticate, requireRole('admin', 'fleet_manager'), as
   try {
     const { vehicleId, frequency, recipients, format } = req.body;
     res.json({ message: 'Reporte programado', schedule: { vehicleId, frequency, recipients, format } });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─── POST /reports/ai-summary — Generar diagnóstico inteligente de flota con IA ──────
+router.post('/ai-summary', authenticate, async (req, res) => {
+  try {
+    const { prompt } = req.body;
+    const defaultPrompt = prompt || 'Por favor genera un reporte completo de diagnóstico inteligente de la flota. Evalúa la cantidad de vehículos activos vs offline, analiza alertas críticas o pánico, y da 3 recomendaciones de seguridad y ahorro de combustible.';
+
+    const aiAnalysis = await askAI(defaultPrompt);
+    res.json({
+      timestamp: new Date(),
+      analysis: aiAnalysis,
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
