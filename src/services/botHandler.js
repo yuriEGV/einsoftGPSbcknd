@@ -3,7 +3,7 @@
  * Procesa todos los mensajes del bot de Telegram.
  * Rutas: /start, /vehiculos, /ubicacion, /estado, /alertas, /panico,
  *         /personas, /resumen, /detenidos, /sin_gps, /ayuda
- * Todo lo que no sea un comando conocido se envía a la IA.
+ * Todo lo que no sea un comando conocido se envía a la IA con contexto de flota.
  */
 import BotUser from '../models/BotUser.js';
 import Vehicle from '../models/Vehicle.js';
@@ -59,32 +59,35 @@ async function getOrCreateBotUser(telegramId, from) {
 // ─── Command Handlers ─────────────────────────────────────────────────────────
 
 async function handleStart(chatId, botUser, from) {
-  const name = from.first_name || 'Operador';
+  const name = from.first_name || from.username || 'Operador';
   const roleMap = {
-    superadmin: '👑 Super Admin',
-    admin: '🛡️ Administrador',
-    operator: '🔧 Operador',
+    superadmin: '👑 Super Administrador',
+    admin: '🛡️ Administrador de Flota',
+    operator: '🔧 Operador de Flota',
     driver: '🚗 Conductor',
     viewer: '👁️ Observador',
   };
   const role = roleMap[botUser.role] || botUser.role;
 
   await sendMessage(chatId,
-    `👋 ¡Hola, <b>${name}</b>!\n\n` +
-    `Soy el asistente de <b>EINSoft GPS</b>.\n` +
-    `Tu rol: ${role}\n\n` +
-    `<b>Comandos disponibles:</b>\n` +
-    `/resumen — Resumen general de la flota\n` +
-    `/vehiculos — Listar todos los vehículos\n` +
-    `/ubicacion PATENTE — Ubicar un vehículo\n` +
-    `/alertas — Alertas activas\n` +
-    `/panico — Alertas de pánico activas\n` +
-    `/personas — Personas rastreadas\n` +
-    `/sin_gps — Vehículos sin señal\n` +
-    `/ayuda — Esta ayuda\n\n` +
-    `💬 También puedes <b>escribirme en lenguaje natural</b>:\n` +
-    `<i>"¿Dónde está el auto ABC-123?"</i>\n` +
-    `<i>"¿Hay alertas críticas ahora?"</i>`
+    `👋 ¡Bienvenido/a de vuelta, <b>${name}</b>!\n\n` +
+    `Soy el <b>Asistente Inteligente EINSoft GPS</b> 🚀\n` +
+    `Puedo ayudarte a gestionar tu flota desde donde estés.\n\n` +
+    `👤 <b>Tu rol:</b> ${role}\n\n` +
+    `<b>📋 Comandos disponibles:</b>\n` +
+    `📊 /resumen — Estado general de la flota\n` +
+    `🚗 /vehiculos — Listar todos los vehículos\n` +
+    `📍 /ubicacion PATENTE — Ubicar un vehículo\n` +
+    `🔔 /alertas — Alertas activas (24h)\n` +
+    `🚨 /panico — Emergencias SOS activas\n` +
+    `👥 /personas — Personal rastreado\n` +
+    `📡 /sin_gps — Vehículos sin señal\n` +
+    `❓ /ayuda — Esta ayuda\n\n` +
+    `🤖 <b>IA Conversacional disponible:</b>\n` +
+    `Puedes escribirme en lenguaje natural y haré lo posible por ayudarte:\n` +
+    `<i>"¿Dónde está el auto CBDX81?"</i>\n` +
+    `<i>"¿Hay alguna alerta crítica ahora?"</i>\n` +
+    `<i>"¿Cuántos vehículos están activos?"</i>`
   );
 }
 
@@ -354,14 +357,46 @@ export async function handleMessage(message) {
       case '/ayuda':
       case '/help':        return handleAyuda(chatId);
       default: {
-        // Everything else → AI
-        await sendMessage(chatId, '🤔 Consultando con la IA...', { disable_notification: true });
-        const aiResponse = await askAI(text);
+        // Everything else → AI with live fleet context
+        await sendMessage(chatId, '🤖 Consultando con la IA de Gemini en tiempo real...', { disable_notification: true });
+
+        // Pre-fetch live fleet data to ground the AI response in real data
+        let fleetContext = '';
+        try {
+          const [vehicles, alerts, panics, persons] = await Promise.all([
+            Vehicle.find({}).select('licensePlate make model status speed location lastUpdate').lean(),
+            Alert.find({ acknowledged: false, createdAt: { $gte: new Date(Date.now() - 86400000) } })
+              .limit(10).populate('vehicle', 'licensePlate').lean(),
+            PanicAlert.find({ status: 'ACTIVE' })
+              .populate('vehicle', 'licensePlate').populate('person', 'name').lean(),
+            PersonTracker.find({}).select('name phone status batteryLevel location updatedAt').lean(),
+          ]);
+
+          const active = vehicles.filter(v => v.status === 'active');
+          const offline = vehicles.filter(v => v.status === 'offline');
+
+          fleetContext = `\n\n[DATOS REALES DE FLOTA EN TIEMPO REAL]\n` +
+            `Vehículos: ${vehicles.length} total (${active.length} activos, ${offline.length} offline)\n` +
+            vehicles.slice(0, 10).map(v =>
+              `- ${v.licensePlate} (${v.make || ''} ${v.model || ''}): ${v.status} | ${v.speed || 0} km/h | ${v.location?.address || 'Sin dirección'} | Último reporte: ${v.lastUpdate ? new Date(v.lastUpdate).toLocaleString('es-CL') : 'N/A'}`
+            ).join('\n') +
+            `\n\nAlertas activas (24h): ${alerts.length}\n` +
+            alerts.slice(0, 5).map(a => `- [${a.severity?.toUpperCase()}] ${a.type}: ${a.message} (${a.vehicle?.licensePlate || 'Sin vehículo'})`).join('\n') +
+            `\n\nPánicos SOS activos: ${panics.length}\n` +
+            panics.map(p => `- SOS: ${p.vehicle?.licensePlate || p.person?.name || 'Desconocido'} en ${p.address || 'Sin dirección'}`).join('\n') +
+            `\n\nPersonal rastreado: ${persons.length}\n` +
+            persons.slice(0, 5).map(p => `- ${p.name}: ${p.status} | Batería: ${p.batteryLevel ?? 'N/A'}% | ${p.location?.address || 'Sin GPS'}`).join('\n');
+        } catch (ctxErr) {
+          console.error('[botHandler] Could not fetch fleet context:', ctxErr.message);
+        }
+
+        const enrichedPrompt = text + fleetContext;
+        const aiResponse = await askAI(enrichedPrompt);
         return sendMessage(chatId, aiResponse);
       }
     }
   } catch (err) {
     console.error('[botHandler] error:', err.message);
-    await sendMessage(chatId, `⚠️ Error interno: ${err.message}`);
+    await sendMessage(chatId, `⚠️ Ocurrió un error interno. Por favor intenta de nuevo en un momento.\n\nDetalle técnico: ${err.message}`);
   }
 }
