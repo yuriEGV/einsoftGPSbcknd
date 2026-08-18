@@ -212,28 +212,33 @@ router.post('/test-alert', authenticate, async (req, res) => {
       return res.status(400).json({ error: 'No hay teléfonos/usuarios de Telegram activos registrados.' });
     }
 
-    const testPanicDoc = {
-      _id: 'TEST-' + Date.now(),
+    const panicDoc = await PanicAlert.create({
+      source: 'person',
       latitude: -33.45694,
       longitude: -70.64827,
-      address: '📍 Santiago / Valparaíso (Prueba de Sistema SOS)',
+      address: '📍 Valparaíso / Santiago (Prueba de Sistema SOS)',
       speed: 0,
+      status: 'ACTIVE',
       triggeredAt: new Date(),
-    };
+    });
 
     const chatIds = botUsers.map(u => u.telegramId);
     const results = await broadcastPanic(chatIds, {
-      panicId: testPanicDoc._id,
+      panicId: panicDoc._id.toString(),
       sourceName: req.user?.name || 'Usuario de Prueba',
       sourceType: 'person',
-      latitude: testPanicDoc.latitude,
-      longitude: testPanicDoc.longitude,
-      address: testPanicDoc.address,
-      speed: testPanicDoc.speed,
-      triggeredAt: testPanicDoc.triggeredAt,
+      latitude: panicDoc.latitude,
+      longitude: panicDoc.longitude,
+      address: panicDoc.address,
+      speed: panicDoc.speed,
+      triggeredAt: panicDoc.triggeredAt,
     });
 
-    res.json({ success: true, count: results.length, recipients: botUsers.map(u => `@${u.telegramUsername || u.telegramId}`) });
+    res.json({
+      success: true,
+      count: results.filter(Boolean).length,
+      recipients: botUsers.map(u => `@${u.telegramUsername || u.telegramId}`),
+    });
   } catch (err) {
     console.error('Error en POST /api/bot/test-alert:', err);
     res.status(500).json({ error: err.message });
