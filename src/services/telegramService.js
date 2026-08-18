@@ -5,13 +5,18 @@
  */
 import axios from 'axios';
 
-const BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN || (typeof Buffer !== 'undefined' ? Buffer.from('ODUwNTI5MTk3NjpBQUZpV1Z2Z3ZSSDZHSlBtSS1kWXBvZDBsaU5NQTFRSmpN', 'base64').toString('ascii') : '');
-const BASE_URL = `https://api.telegram.org/bot${BOT_TOKEN}`;
+function getBotToken() {
+  return process.env.TELEGRAM_BOT_TOKEN || '8505291976:AAFiWVvgvRH69GJPmI-dYpod0liNMA1QJjM';
+}
+
+function getBaseUrl() {
+  return `https://api.telegram.org/bot${getBotToken()}`;
+}
 
 // ─── Core sender ─────────────────────────────────────────────────────────────
 async function apiCall(method, data = {}) {
   try {
-    const res = await axios.post(`${BASE_URL}/${method}`, data, { timeout: 10000 });
+    const res = await axios.post(`${getBaseUrl()}/${method}`, data, { timeout: 10000 });
     return res.data;
   } catch (err) {
     const detail = err.response?.data?.description || err.message;
