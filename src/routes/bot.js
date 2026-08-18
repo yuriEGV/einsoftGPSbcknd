@@ -204,4 +204,40 @@ router.post('/chat', authenticate, async (req, res) => {
   }
 });
 
+// ─── POST /api/bot/test-alert — Send direct test alert to Telegram ─────────
+router.post('/test-alert', authenticate, async (req, res) => {
+  try {
+    const botUsers = await BotUser.find({ enabled: true }).lean();
+    if (!botUsers.length) {
+      return res.status(400).json({ error: 'No hay teléfonos/usuarios de Telegram activos registrados.' });
+    }
+
+    const testPanicDoc = {
+      _id: 'TEST-' + Date.now(),
+      latitude: -33.45694,
+      longitude: -70.64827,
+      address: '📍 Santiago / Valparaíso (Prueba de Sistema SOS)',
+      speed: 0,
+      triggeredAt: new Date(),
+    };
+
+    const chatIds = botUsers.map(u => u.telegramId);
+    const results = await broadcastPanic(chatIds, {
+      panicId: testPanicDoc._id,
+      sourceName: req.user?.name || 'Usuario de Prueba',
+      sourceType: 'person',
+      latitude: testPanicDoc.latitude,
+      longitude: testPanicDoc.longitude,
+      address: testPanicDoc.address,
+      speed: testPanicDoc.speed,
+      triggeredAt: testPanicDoc.triggeredAt,
+    });
+
+    res.json({ success: true, count: results.length, recipients: botUsers.map(u => `@${u.telegramUsername || u.telegramId}`) });
+  } catch (err) {
+    console.error('Error en POST /api/bot/test-alert:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 export default router;

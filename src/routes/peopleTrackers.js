@@ -244,9 +244,14 @@ router.post('/:id/panic', authenticate, async (req, res) => {
           longitude: tracker.location.coordinates[0],
           address: tracker.location.address,
         },
-        notificationChannels: ['dashboard', 'sound'],
+        notificationChannels: ['dashboard', 'sound', 'telegram'],
       });
       await alert.save();
+
+      // Trigger Telegram notification
+      analyzePerson(tracker, true).catch(err =>
+        console.error('[peopleTrackers admin panic] Telegram notify error:', err.message)
+      );
 
       if (req.io) req.io.emit('person_panic_alert', { tracker, alert });
     } else {

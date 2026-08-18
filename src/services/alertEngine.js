@@ -124,30 +124,23 @@ export async function analyzeVehicle(vehicle, payload, io) {
  */
 export async function analyzePerson(person, isPanic = false) {
   try {
-    if (!isPanic) return; // Only handle panic for now
+    if (!isPanic) return;
 
-    const existingPanic = await PanicAlert.findOne({
+    const coords = person.location?.coordinates || [0, 0];
+    const panicDoc = await PanicAlert.create({
+      source: 'person',
       person: person._id,
+      company: person.company,
+      latitude: coords[1],
+      longitude: coords[0],
+      address: person.location?.address || 'Sin dirección',
+      speed: person.speed || 0,
       status: 'ACTIVE',
+      triggeredAt: new Date(),
     });
 
-    if (!existingPanic) {
-      const coords = person.location?.coordinates || [0, 0];
-      const panicDoc = await PanicAlert.create({
-        source: 'person',
-        person: person._id,
-        company: person.company,
-        latitude: coords[1],
-        longitude: coords[0],
-        address: person.location?.address || 'Sin dirección',
-        speed: person.speed || 0,
-        status: 'ACTIVE',
-        triggeredAt: new Date(),
-      });
-
-      console.log(`[alertEngine] 🚨 PÁNICO persona ${person.name}`);
-      await notifyPanic(panicDoc, person.name, 'person');
-    }
+    console.log(`[alertEngine] 🚨 PÁNICO persona ${person.name}`);
+    await notifyPanic(panicDoc, person.name, 'person');
   } catch (err) {
     console.error('[alertEngine] analyzePerson error:', err.message);
   }
