@@ -2,44 +2,59 @@ import express from 'express';
 import mongoose from 'mongoose';
 import Alert from '../models/Alert.js';
 import Vehicle from '../models/Vehicle.js';
-import { authenticate } from '../middleware/auth.js';
-import { requireRole, getAlertScope } from '../middleware/scope.js';
+import { authenticate, requirePermission, requireAnyPermission } from '../middleware/auth.js';
+import { getAlertScope } from '../middleware/scope.js';
 import { broadcastAlert } from '../socket/index.js';
 
 const router = express.Router();
 
-// ─── POST /alerts/panic — Botón de pánico (solo conductores e independientes) ─
-router.post('/panic', authenticate, requireRole('driver', 'independent'), async (req, res) => {
+// ─── POST /alerts/panic — Botón de pánico (conductores y usuarios celular GPS) ─
+router.post('/panic', authenticate, requirePermission('panic.create'), async (req, res) => {
   try {
     const { vehicleId, latitude, longitude } = req.body;
-    if (!vehicleId) return res.status(400).json({ error: 'vehicleId es requerido' });
 
-    // Verificar que el vehículo pertenece al usuario que activa el pánico
-    const vehicleFilter = {
-      _id: vehicleId,
-      $or: [{ owner: req.user.id }, { driver: req.user.id }],
-    };
+    // Para conductor: debe asociarse a un vehículo
+    if (req.user.role === 'driver') {
+      if (!vehicleId) return res.status(400).json({ error: 'vehicleId es requerido para conductores' });
+      const vehicleFilter = {
+        _id: vehicleId,
+        $or: [{ owner: req.user.id }, { driver: req.user.id }],
+      };
+      const vehicle = await Vehicle.findOne(vehicleFilter);
+      if (!vehicle) return res.status(404).json({ error: 'Vehículo no encontrado o sin acceso' });
 
-    const vehicle = await Vehicle.findOne(vehicleFilter);
-    if (!vehicle) return res.status(404).json({ error: 'Vehículo no encontrado o sin acceso' });
+      const alert = await Alert.create({
+        vehicle: vehicle._id,
+        company: vehicle.company,
+        type: 'panic',
+        severity: 'critical',
+        message: `🚨 ¡BOTÓN DE PÁNICO! Conductor: ${req.user.name || req.user.email} — Vehículo: ${vehicle.licensePlate}`,
+        location: {
+          latitude: latitude || vehicle.location?.coordinates?.[1] || 0,
+          longitude: longitude || vehicle.location?.coordinates?.[0] || 0,
+          address: vehicle.location?.address || 'Ubicación desconocida',
+        },
+        triggerValue: true,
+      });
 
-    const alertLocation = {
-      latitude: latitude || vehicle.location?.coordinates?.[1] || 0,
-      longitude: longitude || vehicle.location?.coordinates?.[0] || 0,
-      address: vehicle.location?.address || 'Ubicación desconocida',
-    };
+      if (req.io) broadcastAlert(req.io, vehicle._id, vehicle.company, alert);
+      return res.status(201).json({ message: 'Alerta de pánico enviada', alert });
+    }
 
+    // Para mobile_gps_user: sin vehículo, solo posición
     const alert = await Alert.create({
-      vehicle: vehicle._id,
-      company: vehicle.company,
       type: 'panic',
       severity: 'critical',
-      message: `🚨 ¡BOTÓN DE PÁNICO! Usuario: ${req.user.name || req.user.email} — Vehículo: ${vehicle.licensePlate}`,
-      location: alertLocation,
+      message: `🚨 ¡BOTÓN DE PÁNICO! Usuario GPS: ${req.user.name || req.user.email}`,
+      location: {
+        latitude: latitude || 0,
+        longitude: longitude || 0,
+        address: 'Ubicación GPS móvil',
+      },
       triggerValue: true,
+      personTracker: req.userObj?.personTracker,
     });
 
-    if (req.io) broadcastAlert(req.io, vehicle._id, vehicle.company, alert);
     res.status(201).json({ message: 'Alerta de pánico enviada', alert });
   } catch (error) {
     console.error('Panic alert error:', error);
@@ -47,15 +62,10 @@ router.post('/panic', authenticate, requireRole('driver', 'independent'), async 
   }
 });
 
-// ─── GET /alerts — Listar alertas según scope del rol ─────────────────────────
-router.get('/', authenticate, async (req, res) => {
+// ─── GET /alerts — Listar alertas según scope del rol ────────────────────────────
+router.get('/', authenticate, requirePermission('alerts.view'), async (req, res) => {
   try {
     const { status = 'all', severity = 'all', limit = 50 } = req.query;
-
-    // Conductores no tienen acceso al listado de alertas
-    if (req.user.role === 'driver') {
-      return res.status(403).json({ error: 'Conductores no tienen acceso al historial de alertas' });
-    }
 
     const scopeQuery = await getAlertScope(req.user);
     let query = { ...scopeQuery };
@@ -77,13 +87,10 @@ router.get('/', authenticate, async (req, res) => {
 });
 
 // ─── GET /alerts/vehicle/:vehicleId — Alertas de un vehículo específico ──────
-router.get('/vehicle/:vehicleId', authenticate, async (req, res) => {
+router.get('/vehicle/:vehicleId', authenticate, requirePermission('alerts.view'), async (req, res) => {
   try {
-    if (req.user.role === 'driver') {
-      return res.status(403).json({ error: 'Sin acceso al historial de alertas' });
-    }
-
     const { days = 7 } = req.query;
+
 
     // Verificar acceso al vehículo
     const { getVehicleScope } = await import('./vehicles.js');
@@ -108,7 +115,7 @@ router.get('/vehicle/:vehicleId', authenticate, async (req, res) => {
 });
 
 // ─── POST /alerts/:alertId/acknowledge — Marcar alerta leída ─────────────────
-router.post('/:alertId/acknowledge', authenticate, requireRole('admin', 'fleet_manager', 'independent'), async (req, res) => {
+router.post('/:alertId/acknowledge', authenticate, requirePermission('alerts.acknowledge'), async (req, res) => {
   try {
     const { notes } = req.body;
 
@@ -130,13 +137,10 @@ router.post('/:alertId/acknowledge', authenticate, requireRole('admin', 'fleet_m
 });
 
 // ─── GET /alerts/stats/summary — Estadísticas de alertas ─────────────────────
-router.get('/stats/summary', authenticate, async (req, res) => {
+router.get('/stats/summary', authenticate, requirePermission('alerts.view'), async (req, res) => {
   try {
-    if (req.user.role === 'driver') {
-      return res.status(403).json({ error: 'Sin acceso a estadísticas de alertas' });
-    }
-
     const { days = 7 } = req.query;
+
     const startTime = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     const scopeQuery = await getAlertScope(req.user);
 

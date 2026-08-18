@@ -1,13 +1,13 @@
 import express from 'express';
 import Geofence from '../models/Geofence.js';
 import Vehicle from '../models/Vehicle.js';
-import { authenticate } from '../middleware/auth.js';
-import { requireRole, getGeofenceScope, getVehicleScope } from '../middleware/scope.js';
+import { authenticate, requirePermission } from '../middleware/auth.js';
+import { getGeofenceScope, getVehicleScope } from '../middleware/scope.js';
 
 const router = express.Router();
 
 // ─── POST /geofences — Crear geocerca (admin, fleet_manager, independent) ────
-router.post('/', authenticate, requireRole('admin', 'fleet_manager', 'independent'), async (req, res) => {
+router.post('/', authenticate, requirePermission('geofences.create'), async (req, res) => {
   try {
     const geofence = new Geofence({
       ...req.body,
@@ -55,7 +55,7 @@ router.get('/:id', authenticate, async (req, res) => {
 });
 
 // ─── PUT /geofences/:id — Editar geocerca (admin, fleet_manager, independent) ─
-router.put('/:id', authenticate, requireRole('admin', 'fleet_manager', 'independent'), async (req, res) => {
+router.put('/:id', authenticate, requirePermission('geofences.create'), async (req, res) => {
   try {
     const scope = getGeofenceScope(req.user);
     const geofence = await Geofence.findOneAndUpdate(
@@ -71,7 +71,7 @@ router.put('/:id', authenticate, requireRole('admin', 'fleet_manager', 'independ
 });
 
 // ─── DELETE /geofences/:id — Eliminar geocerca (admin, fleet_manager, independent) ─
-router.delete('/:id', authenticate, requireRole('admin', 'fleet_manager', 'independent'), async (req, res) => {
+router.delete('/:id', authenticate, requirePermission('geofences.create'), async (req, res) => {
   try {
     const scope = getGeofenceScope(req.user);
     const geofence = await Geofence.findOneAndDelete({ _id: req.params.id, ...scope });
@@ -83,7 +83,7 @@ router.delete('/:id', authenticate, requireRole('admin', 'fleet_manager', 'indep
 });
 
 // ─── POST /geofences/:id/check-vehicles — Verificar vehículos en zona ────────
-router.post('/:id/check-vehicles', authenticate, requireRole('admin', 'fleet_manager'), async (req, res) => {
+router.post('/:id/check-vehicles', authenticate, requirePermission('geofences.update'), async (req, res) => {
   try {
     const scope = getGeofenceScope(req.user);
     const geofence = await Geofence.findOne({ _id: req.params.id, ...scope });
@@ -113,3 +113,4 @@ router.post('/:id/check-vehicles', authenticate, requireRole('admin', 'fleet_man
 });
 
 export default router;
+

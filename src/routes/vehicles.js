@@ -2,8 +2,8 @@ import express from 'express';
 import mongoose from 'mongoose';
 import Vehicle from '../models/Vehicle.js';
 import SensorData from '../models/SensorData.js';
-import { authenticate } from '../middleware/auth.js';
-import { requireRole, getVehicleScope } from '../middleware/scope.js';
+import { authenticate, requirePermission } from '../middleware/auth.js';
+import { getVehicleScope } from '../middleware/scope.js';
 import { broadcastVehicleUpdate } from '../socket/index.js';
 import { resolveCity } from './sensors.js';
 
@@ -57,7 +57,7 @@ router.get('/:id', authenticate, async (req, res) => {
 });
 
 // ─── POST /vehicles — Crear vehículo (admin, fleet_manager, independent) ─────
-router.post('/', authenticate, requireRole('admin', 'fleet_manager', 'independent'), async (req, res) => {
+router.post('/', authenticate, requirePermission('vehicles.create'), async (req, res) => {
   try {
     const { companyId, ...vehicleData } = req.body;
     const vehicle = new Vehicle({
@@ -73,7 +73,7 @@ router.post('/', authenticate, requireRole('admin', 'fleet_manager', 'independen
 });
 
 // ─── PUT /vehicles/:id — Editar vehículo (admin, fleet_manager, independent) ─
-router.put('/:id', authenticate, requireRole('admin', 'fleet_manager', 'independent'), async (req, res) => {
+router.put('/:id', authenticate, requirePermission('vehicles.create'), async (req, res) => {
   try {
     const { companyId, ...updateData } = req.body;
     const filter = getVehicleScope(req.user, req.params.id);
@@ -91,7 +91,7 @@ router.put('/:id', authenticate, requireRole('admin', 'fleet_manager', 'independ
 });
 
 // ─── DELETE /vehicles/:id — Eliminar vehículo (admin, fleet_manager, independent) ─
-router.delete('/:id', authenticate, requireRole('admin', 'fleet_manager', 'independent'), async (req, res) => {
+router.delete('/:id', authenticate, requirePermission('vehicles.create'), async (req, res) => {
   try {
     const filter = getVehicleScope(req.user, req.params.id);
     const vehicle = await Vehicle.findOneAndDelete(filter);
@@ -105,7 +105,7 @@ router.delete('/:id', authenticate, requireRole('admin', 'fleet_manager', 'indep
 });
 
 // ─── POST /vehicles/:id/link-device — Vincular IMEI/SIM (admin, fleet_manager, independent) ─
-router.post('/:id/link-device', authenticate, requireRole('admin', 'fleet_manager', 'independent'), async (req, res) => {
+router.post('/:id/link-device', authenticate, requirePermission('vehicles.create'), async (req, res) => {
   try {
     const { deviceIMEI, simCardNumber, deviceModel, driverId } = req.body;
     if (!deviceIMEI) return res.status(400).json({ error: 'deviceIMEI es requerido' });
@@ -195,7 +195,7 @@ router.get('/:id/stats', authenticate, async (req, res) => {
 });
 
 // ─── POST /vehicles/:id/motor-cut — Cortacorriente (admin, fleet_manager) ────
-router.post('/:id/motor-cut', authenticate, requireRole('admin', 'fleet_manager'), async (req, res) => {
+router.post('/:id/motor-cut', authenticate, requirePermission('vehicles.update'), async (req, res) => {
   try {
     const { activate, rules } = req.body;
     const filter = getVehicleScope(req.user, req.params.id);
@@ -224,7 +224,7 @@ router.post('/:id/motor-cut', authenticate, requireRole('admin', 'fleet_manager'
 });
 
 // ─── POST /vehicles/:id/microphone — Micrófono espía (admin, fleet_manager) ──
-router.post('/:id/microphone', authenticate, requireRole('admin', 'fleet_manager'), async (req, res) => {
+router.post('/:id/microphone', authenticate, requirePermission('vehicles.update'), async (req, res) => {
   try {
     const { activate } = req.body;
     const filter = getVehicleScope(req.user, req.params.id);
@@ -241,7 +241,7 @@ router.post('/:id/microphone', authenticate, requireRole('admin', 'fleet_manager
 // ─── POST /vehicles/:id/reset-location — Limpiar ubicación obsoleta ──────────
 // Permite limpiar coordenadas viejas de la DB cuando un vehículo muestra
 // una ubicación incorrecta heredada de otro dispositivo o de datos de prueba.
-router.post('/:id/reset-location', authenticate, requireRole('admin', 'fleet_manager', 'independent'), async (req, res) => {
+router.post('/:id/reset-location', authenticate, requirePermission('vehicles.create'), async (req, res) => {
   try {
     const filter = getVehicleScope(req.user, req.params.id);
     const vehicle = await Vehicle.findOneAndUpdate(
@@ -275,7 +275,7 @@ router.post('/:id/reset-location', authenticate, requireRole('admin', 'fleet_man
 });
 
 // ─── POST /vehicles/:id/set-location — Actualizar ubicación manualmente ──────
-router.post('/:id/set-location', authenticate, requireRole('admin', 'fleet_manager', 'independent'), async (req, res) => {
+router.post('/:id/set-location', authenticate, requirePermission('vehicles.create'), async (req, res) => {
   try {
     const { latitude, longitude, address: customAddress, city: customCity } = req.body;
     if (typeof latitude !== 'number' || typeof longitude !== 'number') {
@@ -319,3 +319,5 @@ router.post('/:id/set-location', authenticate, requireRole('admin', 'fleet_manag
 });
 
 export default router;
+
+
