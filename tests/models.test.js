@@ -34,7 +34,7 @@ describe('Mongoose Models Unit Tests', () => {
       };
       const user = new User(userData);
       expect(user.name).toBe('Carlos Gomez');
-      expect(user.role).toBe('independent');
+      expect(user.role).toBe('client'); // Updated default role from 'independent' to 'client'
     });
 
     it('should validate role enum', () => {

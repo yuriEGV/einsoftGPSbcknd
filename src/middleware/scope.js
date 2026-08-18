@@ -2,16 +2,19 @@
  * scope.js — Middleware centralizado de aislamiento de datos por rol
  *
  * Roles del sistema:
- *   admin        → Acceso global total. Ve y gestiona todo.
- *   fleet_manager → Solo vehículos/conductores/alertas de su empresa.
- *   independent  → Solo sus propios vehículos (owner/driver). Plan familiar.
- *   driver       → Solo el vehículo asignado. Botón de pánico únicamente.
+ *   superadmin      → Acceso global total. Ve y gestiona todo.
+ *   admin           → Solo vehículos/conductores/alertas de su empresa.
+ *   operator        → Ve toda la empresa. No puede eliminar.
+ *   supervisor      → Ve toda la empresa. Solo lectura extendida.
+ *   driver          → Solo su vehículo asignado. Botón de pánico.
+ *   mobile_gps_user → Solo su posición propia. Botón de pánico.
+ *   client          → Solo vehículos/dispositivos autorizados explícitamente.
+ *   auditor         → Solo lectura de todo. Sin escritura.
  */
 
 import mongoose from 'mongoose';
 
 // ─── requireRole ──────────────────────────────────────────────────────────────
-// Middleware guard: rechaza con 403 si el usuario no tiene uno de los roles permitidos.
 export const requireRole = (...roles) => (req, res, next) => {
   if (!req.user) return res.status(401).json({ error: 'No autenticado' });
   if (!roles.includes(req.user.role)) {
@@ -23,70 +26,69 @@ export const requireRole = (...roles) => (req, res, next) => {
 };
 
 // ─── requireReadWrite ─────────────────────────────────────────────────────────
-// Bloquea métodos de escritura (POST, PUT, PATCH, DELETE) para drivers
+// Bloquea métodos de escritura para roles de solo lectura
 export const requireReadWrite = (req, res, next) => {
+  const READ_ONLY_ROLES = ['auditor', 'client'];
   const writeMethods = ['POST', 'PUT', 'PATCH', 'DELETE'];
-  if (req.user?.role === 'driver' && writeMethods.includes(req.method)) {
-    return res.status(403).json({ error: 'Conductores no tienen permisos de escritura' });
+  if (READ_ONLY_ROLES.includes(req.user?.role) && writeMethods.includes(req.method)) {
+    return res.status(403).json({ error: 'Este perfil no tiene permisos de escritura' });
   }
   next();
 };
 
+// ─── Company scope helper ─────────────────────────────────────────────────────
+function companyFilter(user, extra = {}) {
+  if (!user.company) return { ...extra, _id: new mongoose.Types.ObjectId() };
+  return { ...extra, company: user.company };
+}
+
 // ─── getVehicleScope ──────────────────────────────────────────────────────────
-// Retorna el filtro MongoDB apropiado para consultas de vehículos según el rol.
-// vehicleId es opcional — si se pasa, lo añade al filtro.
 export function getVehicleScope(user, vehicleId = null) {
   const base = vehicleId ? { _id: vehicleId } : {};
 
   switch (user.role) {
-    case 'admin':
-      // Ve absolutamente todo
+    case 'superadmin':
       return base;
 
-    case 'fleet_manager':
-      // Solo vehículos de su empresa
-      if (!user.company) return { ...base, _id: new mongoose.Types.ObjectId() }; // empresa requerida
-      return { ...base, company: user.company };
-
-    case 'independent':
-      // Solo vehículos propios (dueño o conductor asignado)
-      return {
-        ...base,
-        $or: [
-          { owner: user.id },
-          { driver: user.id },
-        ],
-      };
+    case 'admin':
+    case 'operator':
+    case 'supervisor':
+      return companyFilter(user, base);
 
     case 'driver':
-      // Solo el/los vehículos asignados a este conductor
+      // Solo el vehículo asignado
       return { ...base, driver: user.id };
 
+    case 'mobile_gps_user':
+      // No conduce vehículos — sin acceso
+      return { ...base, _id: new mongoose.Types.ObjectId() };
+
+    case 'client':
+      // Solo vehículos a los que el cliente tiene acceso explícito
+      // (manejado en la capa de negocio con allowedVehicles)
+      return companyFilter(user, base);
+
+    case 'auditor':
+      // Auditor ve todo su company
+      return user.company ? companyFilter(user, base) : base;
+
     default:
-      // Rol desconocido: sin acceso
       return { ...base, _id: new mongoose.Types.ObjectId() };
   }
 }
 
 // ─── getAlertScope ────────────────────────────────────────────────────────────
-// Retorna el filtro MongoDB apropiado para consultas de alertas según el rol.
-// Requiere 'Vehicle' model para independientes.
 export async function getAlertScope(user) {
   switch (user.role) {
-    case 'admin':
+    case 'superadmin':
       return {};
 
-    case 'fleet_manager':
+    case 'admin':
+    case 'operator':
+    case 'supervisor':
+    case 'auditor':
       if (!user.company) return { _id: new mongoose.Types.ObjectId() };
       return { company: user.company };
-
-    case 'independent': {
-      const Vehicle = mongoose.model('Vehicle');
-      const vehicles = await Vehicle.find({
-        $or: [{ owner: user.id }, { driver: user.id }],
-      }).select('_id');
-      return { vehicle: { $in: vehicles.map(v => v._id) } };
-    }
 
     case 'driver': {
       const Vehicle = mongoose.model('Vehicle');
@@ -94,29 +96,37 @@ export async function getAlertScope(user) {
       return { vehicle: { $in: vehicles.map(v => v._id) } };
     }
 
+    case 'mobile_gps_user':
+      // Solo alertas propias (person tracker)
+      return { personTracker: user.personTracker ?? new mongoose.Types.ObjectId() };
+
+    case 'client':
+      if (!user.company) return { _id: new mongoose.Types.ObjectId() };
+      return { company: user.company };
+
     default:
       return { _id: new mongoose.Types.ObjectId() };
   }
 }
 
 // ─── getGeofenceScope ─────────────────────────────────────────────────────────
-// Retorna el filtro MongoDB para geocercas según el rol.
 export function getGeofenceScope(user) {
   switch (user.role) {
-    case 'admin':
+    case 'superadmin':
       return {};
 
-    case 'fleet_manager':
+    case 'admin':
+    case 'operator':
+    case 'supervisor':
+    case 'auditor':
       if (!user.company) return { _id: new mongoose.Types.ObjectId() };
       return { company: user.company };
 
-    case 'independent':
-      // Solo geocercas creadas por este usuario
-      return { creator: user.id };
-
     case 'driver':
+    case 'mobile_gps_user':
+    case 'client':
       // Sin acceso a geocercas
-      return null; // Caller debe retornar 403
+      return null;
 
     default:
       return { _id: new mongoose.Types.ObjectId() };
@@ -124,22 +134,60 @@ export function getGeofenceScope(user) {
 }
 
 // ─── getUserScope ─────────────────────────────────────────────────────────────
-// Retorna el filtro MongoDB para consultas de usuarios según el rol.
 export function getUserScope(user) {
   switch (user.role) {
+    case 'superadmin':
+      return {};
+
     case 'admin':
-      return {}; // Ve todos los usuarios del sistema
-
-    case 'fleet_manager':
       if (!user.company) return { _id: new mongoose.Types.ObjectId() };
-      return { company: user.company }; // Solo usuarios de su empresa
+      return { company: user.company };
 
-    case 'independent':
+    case 'operator':
+    case 'supervisor':
+      // Puede ver usuarios de la empresa (solo lectura de la lista)
+      if (!user.company) return { _id: new mongoose.Types.ObjectId() };
+      return { company: user.company };
+
+    case 'auditor':
+      return user.company ? { company: user.company } : {};
+
     case 'driver':
+    case 'mobile_gps_user':
+    case 'client':
       // Solo pueden ver su propio perfil (manejado en /profile)
-      return null; // Caller debe retornar 403 para listados
+      return null;
 
     default:
       return null;
   }
 }
+
+// ─── getPeopleTrackerScope ────────────────────────────────────────────────────
+export function getPeopleTrackerScope(user) {
+  switch (user.role) {
+    case 'superadmin':
+      return {};
+
+    case 'admin':
+    case 'operator':
+    case 'supervisor':
+    case 'auditor':
+      if (!user.company) return { _id: new mongoose.Types.ObjectId() };
+      return { company: user.company };
+
+    case 'mobile_gps_user':
+      // Solo su propio tracker
+      return user.personTracker
+        ? { _id: user.personTracker }
+        : { user: user.id };
+
+    case 'driver':
+    case 'client':
+      return { _id: new mongoose.Types.ObjectId() };
+
+    default:
+      return { _id: new mongoose.Types.ObjectId() };
+  }
+}
+
