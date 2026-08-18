@@ -207,41 +207,56 @@ router.post('/chat', authenticate, async (req, res) => {
 // ─── POST /api/bot/test-alert — Send direct test alert to Telegram ─────────
 router.post('/test-alert', authenticate, async (req, res) => {
   try {
-    const botUsers = await BotUser.find({ enabled: true }).lean();
+    let botUsers = await BotUser.find({ enabled: true }).lean();
     if (!botUsers.length) {
-      return res.status(400).json({ error: 'No hay teléfonos/usuarios de Telegram activos registrados.' });
+      botUsers = await BotUser.find({}).lean();
     }
 
-    const panicDoc = await PanicAlert.create({
-      source: 'person',
-      latitude: -33.45694,
-      longitude: -70.64827,
-      address: '📍 Valparaíso / Santiago (Prueba de Sistema SOS)',
+    if (!botUsers.length) {
+      return res.status(400).json({ error: 'No hay teléfonos u operadores de Telegram registrados. Agrega tu Telegram ID abajo primero.' });
+    }
+
+    let panicId = 'TEST-' + Date.now();
+    let latitude = -33.45694;
+    let longitude = -70.64827;
+    let address = '📍 Valparaíso / Santiago (Prueba de Sistema SOS)';
+
+    try {
+      const panicDoc = await PanicAlert.create({
+        source: 'person',
+        latitude,
+        longitude,
+        address,
+        speed: 0,
+        status: 'ACTIVE',
+        triggeredAt: new Date(),
+      });
+      panicId = panicDoc._id.toString();
+    } catch (e) {
+      console.warn('[test-alert] PanicAlert.create fallback:', e.message);
+    }
+
+    const chatIds = botUsers.map(u => u.telegramId).filter(Boolean);
+    const results = await broadcastPanic(chatIds, {
+      panicId,
+      sourceName: req.user?.name || 'Prueba de Sistema SOS',
+      sourceType: 'person',
+      latitude,
+      longitude,
+      address,
       speed: 0,
-      status: 'ACTIVE',
       triggeredAt: new Date(),
     });
 
-    const chatIds = botUsers.map(u => u.telegramId);
-    const results = await broadcastPanic(chatIds, {
-      panicId: panicDoc._id.toString(),
-      sourceName: req.user?.name || 'Usuario de Prueba',
-      sourceType: 'person',
-      latitude: panicDoc.latitude,
-      longitude: panicDoc.longitude,
-      address: panicDoc.address,
-      speed: panicDoc.speed,
-      triggeredAt: panicDoc.triggeredAt,
-    });
-
+    const sentCount = results ? results.filter(Boolean).length : 0;
     res.json({
       success: true,
-      count: results.filter(Boolean).length,
-      recipients: botUsers.map(u => `@${u.telegramUsername || u.telegramId}`),
+      count: sentCount,
+      recipients: botUsers.map(u => u.telegramUsername ? `@${u.telegramUsername}` : `ID: ${u.telegramId}`),
     });
   } catch (err) {
     console.error('Error en POST /api/bot/test-alert:', err);
-    res.status(500).json({ error: err.message });
+    res.status(500).json({ error: err.message || 'Error interno al enviar alerta' });
   }
 });
 

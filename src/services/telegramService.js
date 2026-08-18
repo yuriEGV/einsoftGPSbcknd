@@ -88,10 +88,14 @@ export async function broadcastPanic(chatIds, panicData) {
     ? `https://www.google.com/maps?q=${latitude},${longitude}`
     : null;
 
-  const timeStr = new Date(triggeredAt).toLocaleString('es-CL', {
-    timeZone: 'America/Santiago',
-    hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit',
-  });
+  let timeStr = '';
+  try {
+    timeStr = new Date(triggeredAt || Date.now()).toLocaleString('es-CL', {
+      hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit',
+    });
+  } catch (_) {
+    timeStr = new Date().toISOString();
+  }
 
   const text = `🚨 <b>ALERTA DE PÁNICO</b> 🚨\n\n` +
     `📌 <b>${sourceType === 'vehicle' ? '🚗 Vehículo' : '👤 Persona'}:</b> ${sourceName}\n` +
