@@ -15,7 +15,7 @@
 import express from 'express';
 import { authenticate } from '../middleware/auth.js';
 import { handleMessage, handleCallbackQuery } from '../services/botHandler.js';
-import { setWebhook, getWebhookInfo, sendMessage } from '../services/telegramService.js';
+import { setWebhook, getWebhookInfo, sendMessage, broadcastPanic } from '../services/telegramService.js';
 import { acknowledgePanic, resolvePanic } from '../services/alertEngine.js';
 import { askAI } from '../services/aiService.js';
 import BotUser from '../models/BotUser.js';
