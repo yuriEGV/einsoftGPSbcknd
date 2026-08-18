@@ -84,9 +84,9 @@ export async function broadcastPanic(chatIds, panicData) {
     address, speed, triggeredAt
   } = panicData;
 
-  const mapUrl = latitude && longitude
-    ? `https://www.google.com/maps?q=${latitude},${longitude}`
-    : null;
+  const platformUrl = sourceType === 'person'
+    ? 'https://einsoft-gp-sfrntnd.vercel.app/people-tracker'
+    : 'https://einsoft-gp-sfrntnd.vercel.app/dashboard';
 
   let timeStr = '';
   try {
@@ -97,18 +97,23 @@ export async function broadcastPanic(chatIds, panicData) {
     timeStr = new Date().toISOString();
   }
 
-  const text = `🚨 <b>ALERTA DE PÁNICO</b> 🚨\n\n` +
+  const text = `🚨 <b>ALERTA DE PÁNICO SOS — EINSOFT GPS</b> 🚨\n\n` +
     `📌 <b>${sourceType === 'vehicle' ? '🚗 Vehículo' : '👤 Persona'}:</b> ${sourceName}\n` +
-    `📍 <b>Ubicación:</b> ${address || 'Sin dirección'}\n` +
+    `📍 <b>Ubicación:</b> ${address || 'Coordenadas de Emergencia'}\n` +
     (speed > 0 ? `💨 <b>Velocidad:</b> ${speed} km/h\n` : '') +
-    `⏰ <b>Hora:</b> ${timeStr}\n` +
-    (mapUrl ? `\n🗺️ <a href="${mapUrl}">Ver en Mapa</a>` : '');
+    `⏰ <b>Hora:</b> ${timeStr}\n\n` +
+    `🌐 <a href="${platformUrl}">Abrir Consola EINSoft GPS</a>`;
 
   const inlineKeyboard = {
-    inline_keyboard: [[
-      { text: '✅ Reconocer', callback_data: `panic_ack:${panicData.panicId}` },
-      { text: '✔️ Resolver', callback_data: `panic_resolve:${panicData.panicId}` },
-    ]],
+    inline_keyboard: [
+      [
+        { text: '✅ Reconocer', callback_data: `panic_ack:${panicData.panicId}` },
+        { text: '✔️ Resolver', callback_data: `panic_resolve:${panicData.panicId}` },
+      ],
+      [
+        { text: '🌐 Abrir en Einsoft GPS', url: platformUrl },
+      ]
+    ],
   };
 
   const results = [];
