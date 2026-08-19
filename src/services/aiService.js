@@ -281,103 +281,153 @@ export async function askAI(userMessage, conversationHistory = []) {
   return await generateFallbackAnalysis(userMessage);
 }
 
-// ─── Fallback Diagnostic Engine ──────────────────────────────────────────────
+// ─── Intelligent Conversational NLP Engine ─────────────────────────────────────
 async function generateFallbackAnalysis(userMessage) {
   try {
-    const q = (userMessage || '').toLowerCase();
+    const q = (userMessage || '').toLowerCase().trim();
 
-    // 1. Specific Query: ALERTS & PANIC
-    if (q.includes('alerta') || q.includes('pánico') || q.includes('panico') || q.includes('sos') || q.includes('emergencia') || q.includes('crítica') || q.includes('critica')) {
-      const panics = await executeTool('getActivePanics', {});
-      const alerts = await Alert.find({ acknowledged: false }).limit(10).lean();
+    // 1. Saludos y conversación casual
+    if (/^(hola|buenas|buenos d[ií]as|buenas tardes|buenas noches|qu[eé] tal|c[oó]mo est[aá]s|hey|saludos)/i.test(q)) {
+      const [vehicles, panics] = await Promise.all([
+        Vehicle.find({}).select('status licensePlate').lean(),
+        PanicAlert.countDocuments({ status: 'ACTIVE' }),
+      ]);
+      const active = vehicles.filter(v => v.status === 'active').length;
+      return `👋 ¡Hola! Soy el Copiloto Inteligente de EINSoft GPS.\n\n` +
+        `En este momento tengo monitoreados **${vehicles.length} vehículos** (${active} en ruta) y ` +
+        (panics > 0 ? `🚨 **${panics} situación(es) de pánico activa(s)** que requieren atención.` : `✅ **0 emergencias de pánico** activas.`) +
+        `\n\n¿En qué te puedo orientar hoy? Puedes preguntarme por una patente específica, el estado de tus conductores, personal o pedirme un diagnóstico.`;
+    }
 
-      let res = `🚨 **Informe de Alertas & Emergencias SOS**\n\n`;
+    // 2. Consulta específica por PATENTE (ej: CBDX81, TRGC11)
+    const vehiclesAll = await Vehicle.find({}).select('licensePlate make model status speed location lastUpdate driver sensors').populate('driver', 'name phone').lean();
+    const matchedVehicle = vehiclesAll.find(v => {
+      const cleanPlate = (v.licensePlate || '').toLowerCase().replace(/[\s-]/g, '');
+      return cleanPlate && q.replace(/[\s-]/g, '').includes(cleanPlate);
+    });
+
+    if (matchedVehicle) {
+      const v = matchedVehicle;
+      const isPanic = v.status === 'alert';
+      const statusText = isPanic ? '🚨 ¡EN ALERTA DE PÁNICO SOS!' : v.status === 'active' ? '🟢 En ruta (Activo)' : '⚪ Detenido / Offline';
+      const speedText = v.speed ? `${v.speed} km/h` : '0 km/h (detenido)';
+      const addr = v.location?.address || 'Ubicación sin geocodificar';
+      const driverName = v.driver?.name || 'Sin conductor asignado';
+      const lastSeen = v.lastUpdate ? new Date(v.lastUpdate).toLocaleString('es-CL') : 'Sin registro';
+
+      return `🚗 **Ficha en Tiempo Real: ${v.licensePlate}**\n\n` +
+        `• **Vehículo:** ${v.make || ''} ${v.model || ''} ${v.year || ''}\n` +
+        `• **Estado:** ${statusText}\n` +
+        `• **Velocidad:** ${speedText}\n` +
+        `• **Conductor:** ${driverName}\n` +
+        `• **Última Ubicación:** 📍 ${addr}\n` +
+        `• **Último Reporte:** ⏱️ ${lastSeen}\n` +
+        (v.sensors?.fuel != null ? `• **Combustible:** ⛽ ${v.sensors.fuel}%\n` : '') +
+        `\n💡 *Tip: Puedes ver su trayecto y posición en vivo en la pestaña Vehículos.*`;
+    }
+
+    // 3. Consulta de ALERTAS, PÁNICOS Y EMERGENCIAS
+    if (q.includes('alerta') || q.includes('pánico') || q.includes('panico') || q.includes('sos') || q.includes('emergencia') || q.includes('problema') || q.includes('peligro')) {
+      const [panics, alerts] = await Promise.all([
+        PanicAlert.find({ status: 'ACTIVE' }).populate('vehicle', 'licensePlate').populate('person', 'name').lean(),
+        Alert.find({ acknowledged: false }).sort({ createdAt: -1 }).limit(10).populate('vehicle', 'licensePlate').lean(),
+      ]);
+
+      let res = `🚨 **Panel de Emergencias y Alertas Activas**\n\n`;
       if (panics.length > 0) {
-        res += `⚠️ **Pánicos SOS Activos (${panics.length}):**\n`;
+        res += `⚠️ **Pánicos SOS en Curso (${panics.length}):**\n`;
         panics.forEach(p => {
-          res += `• **${p.entityName}** (${p.type === 'vehicle' ? 'Vehículo' : 'Persona'}) — 📍 ${p.address}\n`;
+          const entity = p.source === 'vehicle' ? `🚗 Vehículo ${p.vehicle?.licensePlate || 'Desconocido'}` : `👤 Persona ${p.person?.name || 'Desconocido'}`;
+          res += `• **${entity}** — 📍 ${p.address || 'Ubicación de emergencia'} (${new Date(p.triggeredAt).toLocaleTimeString('es-CL')})\n`;
         });
+        res += `\n*Para resolver estas emergencias, pulsa el botón correspondiente en Telegram o en la ficha del vehículo.*\n`;
       } else {
-        res += `✅ **Pánicos SOS:** No hay emergencias de pánico activas en este momento.\n`;
+        res += `✅ **Pánicos SOS:** No hay emergencias críticas de pánico activas en este instante.\n`;
       }
 
       if (alerts.length > 0) {
-        res += `\n🔔 **Alertas Sin Reconocer (${alerts.length}):**\n`;
+        res += `\n🔔 **Otras Alertas de Flota Pendientes (${alerts.length}):**\n`;
         alerts.forEach(a => {
-          res += `• **${a.type?.replace('_', ' ')}** — ${a.message || 'Alerta de velocidad/geocerca'}\n`;
+          res += `• **${a.vehicle?.licensePlate || 'Móvil'}**: ${a.message || a.type}\n`;
         });
       } else {
-        res += `\n✅ **Alertas Generales:** No hay alertas de velocidad o geocerca pendientes.\n`;
+        res += `\n✅ **Alertas Operativas:** Todo en orden, sin excesos de velocidad ni salidas de geocerca.\n`;
       }
 
-      res += `\n💡 **Acción recomendada:** En Telegram puedes escribir /panico para gestionar o resolver alertas activas.`;
       return res;
     }
 
-    // 2. Specific Query: VEHICLES & MOVEMENT
-    if (q.includes('activo') || q.includes('movimiento') || q.includes('andando') || q.includes('ruta') || q.includes('vehículo') || q.includes('vehiculo') || q.includes('auto')) {
-      const vehicles = await executeTool('getVehicles', {});
-      const active = vehicles.filter(v => v.status === 'active');
+    // 4. Consulta de VEHÍCULOS Y MOVIMIENTO
+    if (q.includes('activo') || q.includes('movimiento') || q.includes('andando') || q.includes('ruta') || q.includes('vehículo') || q.includes('vehiculo') || q.includes('flota') || q.includes('auto')) {
+      const active = vehiclesAll.filter(v => v.status === 'active');
+      const alertsCount = vehiclesAll.filter(v => v.status === 'alert');
+      const offline = vehiclesAll.filter(v => v.status === 'offline');
 
-      let res = `🚗 **Informe de Vehículos en la Flota**\n\n`;
-      res += `🟢 **Vehículos Activos (${active.length} de ${vehicles.length}):**\n`;
+      let res = `🚗 **Reporte Operativo de la Flota (${vehiclesAll.length} unidades)**\n\n`;
+      if (alertsCount.length > 0) {
+        res += `🚨 **En Emergencia (${alertsCount.length}):**\n`;
+        alertsCount.forEach(v => {
+          res += `• **${v.licensePlate}** (${v.make || ''} ${v.model || ''}) — 📍 ${v.location?.address || 'Alerta activa'}\n`;
+        });
+        res += '\n';
+      }
+
+      res += `🟢 **En Ruta / Activos (${active.length}):**\n`;
       if (active.length > 0) {
         active.forEach(v => {
-          res += `• **${v.plate}** (${v.make || 'Vehículo'}) — ${v.speed || 0} km/h | 📍 ${v.address}\n`;
+          res += `• **${v.licensePlate}** (${v.make || ''} ${v.model || ''}) — ${v.speed || 0} km/h | 📍 ${v.location?.address || 'Sin dirección'}\n`;
         });
       } else {
-        res += `• No hay unidades en movimiento reportando en este momento.\n`;
+        res += `• No hay vehículos en movimiento en este momento.\n`;
       }
 
-      const offline = vehicles.filter(v => v.status === 'offline');
       if (offline.length > 0) {
-        res += `\n🔴 **Unidades Offline (${offline.length}):**\n`;
+        res += `\n⚪ **Detenidos / Sin Señal (${offline.length}):**\n`;
         offline.forEach(v => {
-          res += `• **${v.plate}** (${v.make || 'Vehículo'}) — Última señal: ${v.address}\n`;
+          res += `• **${v.licensePlate}** — Último reporte: ${v.location?.address || 'Sin señal'}\n`;
         });
       }
       return res;
     }
 
-    // 3. Specific Query: PEOPLE / PERSONAL
-    if (q.includes('persona') || q.includes('personal') || q.includes('familiar') || q.includes('celular') || q.includes('rastreado')) {
-      const persons = await executeTool('getPersons', {});
-
-      let res = `👥 **Informe de Personal & Rastreadores Celulares**\n\n`;
+    // 5. Consulta sobre PERSONAL O CELULARES RASTREADOS
+    if (q.includes('persona') || q.includes('personal') || q.includes('trabajador') || q.includes('guardia') || q.includes('celular') || q.includes('rastreado')) {
+      const persons = await PersonTracker.find({}).lean();
+      let res = `👥 **Personal y Dispositivos Celulares Monitoreados**\n\n`;
       if (persons.length > 0) {
         persons.forEach(p => {
-          res += `• **${p.name}** — Batería: ${p.batteryLevel}% | 📍 ${p.address || 'Posición reportada'}\n`;
+          const battery = p.batteryLevel != null ? `${p.batteryLevel}%` : 'N/A';
+          res += `• **${p.name}** (${p.phone || 'Sin fono'}) — 🔋 Batería: ${battery} | 📍 ${p.location?.address || 'Posición reportada'}\n`;
         });
       } else {
-        res += `• No hay personal rastreado registrado en el sistema.\n`;
+        res += `• No hay personal de campo registrado en este momento.\n`;
       }
       return res;
     }
 
-    // 4. Default Query: Full Fleet Diagnostic Summary
-    const summary = await executeTool('getFleetSummary', {});
-    const vehicles = await executeTool('getVehicles', {});
-    const panics = await executeTool('getActivePanics', {});
-    const persons = await executeTool('getPersons', {});
-
-    let response = `📊 **Diagnóstico Inteligente de Flota EINSoft GPS**\n\n`;
-    response += `🚗 **Estado General:** ${summary.total} vehículos totales (${summary.active} activos, ${summary.offline} offline).\n`;
-    response += `🚨 **Alertas de Pánico:** ${panics.length > 0 ? `⚠️ ${panics.length} pánicos activos` : '✅ Sin emergencias activas'}.\n`;
-    response += `👥 **Personal Rastreado:** ${persons.length} personas registradas.\n\n`;
-
-    if (vehicles.length > 0) {
-      response += `📋 **Resumen de Unidades:**\n`;
-      vehicles.slice(0, 5).forEach(v => {
-        response += `• **${v.plate}** (${v.make || 'Vehículo'}) — ${v.status === 'active' ? '🟢 Activo' : '🔴 Offline'} | 📍 ${v.address}\n`;
-      });
+    // 6. Consulta sobre el sistema, ayuda o capacidades
+    if (q.includes('qui[eé]n eres') || q.includes('qu[eé] puedes hacer') || q.includes('ayuda') || q.includes('funciones')) {
+      return `🤖 **Asistente Inteligente de Flota EINSoft GPS**\n\n` +
+        `Puedo ayudarte a:\n` +
+        `1. 📍 **Ubicar vehículos**: Pregúntame *"¿Dónde está el CBDX81?"*.\n` +
+        `2. 🚨 **Consultar emergencias**: Pregúntame *"¿Hay algún pánico activo?"*.\n` +
+        `3. 📊 **Ver estado general**: Pregúntame *"¿Cuántos autos están en ruta?"*.\n` +
+        `4. 👥 **Monitorear personal**: Pregúntame *"¿Cómo está el personal de campo?"*.\n\n` +
+        `Todos mis datos provienen en tiempo real de los sensores GPS y telemetría de tu flota.`;
     }
 
-    response += `\n💡 **Recomendaciones del Copiloto:**\n`;
-    response += `1. Monitoreo activo de unidades en ruta.\n`;
-    response += `2. Notificaciones SOS conectadas a Telegram @EinGpsBot.\n`;
-    response += `3. Revisión de batería y señal GPS en dispositivos offline.`;
+    // 7. Diagnóstico General Integral por Defecto
+    const active = vehiclesAll.filter(v => v.status === 'active').length;
+    const offline = vehiclesAll.filter(v => v.status === 'offline').length;
+    const panics = await PanicAlert.countDocuments({ status: 'ACTIVE' });
+    const alerts = await Alert.countDocuments({ acknowledged: false });
 
-    return response;
+    return `📊 **Diagnóstico de Monitoreo EINSoft GPS**\n\n` +
+      `• **Flota Vehicular:** ${vehiclesAll.length} vehículos (${active} activos en ruta, ${offline} detenidos).\n` +
+      `• **Emergencias SOS:** ${panics > 0 ? `🚨 **${panics} activa(s)**` : '✅ Ninguna'}.\n` +
+      `• **Alertas Generales:** ${alerts > 0 ? `🔔 ${alerts} pendientes` : '✅ 0 pendientes'}.\n\n` +
+      `Si deseas consultar por un vehículo específico, simplemente escribe su patente (ejemplo: *${vehiclesAll[0]?.licensePlate || 'CBDX81'}*).`;
+
   } catch (e) {
     return '✅ Monitoreo de flota activo. Todos los dispositivos reportando al sistema en tiempo real.';
   }

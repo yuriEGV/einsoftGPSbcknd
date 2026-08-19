@@ -17,7 +17,7 @@ function msSince(date) {
  * Notifica a todos los BotUsers activos con rol admin/operator sobre una PanicAlert.
  * Guarda los messageIds en el documento de pánico.
  */
-async function notifyPanic(panicDoc, sourceName, sourceType) {
+export async function notifyPanic(panicDoc, sourceName, sourceType) {
   try {
     const admins = await BotUser.find({
       enabled: true,
@@ -148,19 +148,36 @@ export async function analyzePerson(person, isPanic = false) {
 
 // ─── acknowledgePanic ─────────────────────────────────────────────────────────
 export async function acknowledgePanic(panicId, acknowledgedBy) {
-  return PanicAlert.findByIdAndUpdate(panicId, {
+  const panic = await PanicAlert.findByIdAndUpdate(panicId, {
     status: 'ACKNOWLEDGED',
     acknowledgedBy,
     acknowledgedAt: new Date(),
   }, { new: true });
+
+  if (panic?.vehicle) {
+    await Alert.updateMany(
+      { vehicle: panic.vehicle, type: 'panic', acknowledged: false },
+      { acknowledged: true, acknowledgedAt: new Date(), acknowledgeNotes: `Reconocido por ${acknowledgedBy}` }
+    );
+  }
+  return panic;
 }
 
 // ─── resolvePanic ─────────────────────────────────────────────────────────────
 export async function resolvePanic(panicId, resolvedBy, notes = '') {
-  return PanicAlert.findByIdAndUpdate(panicId, {
+  const panic = await PanicAlert.findByIdAndUpdate(panicId, {
     status: 'RESOLVED',
     acknowledgedBy: resolvedBy,
     resolvedAt: new Date(),
     notes,
   }, { new: true });
+
+  if (panic?.vehicle) {
+    await Vehicle.findByIdAndUpdate(panic.vehicle, { status: 'active' });
+    await Alert.updateMany(
+      { vehicle: panic.vehicle, type: 'panic' },
+      { acknowledged: true, acknowledgedAt: new Date(), acknowledgeNotes: `Resuelto por ${resolvedBy}` }
+    );
+  }
+  return panic;
 }
