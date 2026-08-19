@@ -48,14 +48,21 @@ async function processTelemetryPoint(point, clientIp, io = null) {
     });
   }
 
-  // 2. Check if matches PersonTracker by code or deviceId
+  // 2. Check if matches PersonTracker by code, deviceId, phone (or digits), or name
   if (!targetVehicle && (trackerCode || deviceId)) {
+    const rawId = String(trackerCode || deviceId).trim();
+    const cleanDigits = rawId.replace(/\D/g, '');
+    const phoneRegex = cleanDigits.length >= 7 ? new RegExp(cleanDigits.slice(-8) + '$') : null;
+
     targetPerson = await PersonTracker.findOne({
       $or: [
-        { code: trackerCode || deviceId },
-        { deviceId: deviceId },
-        { _id: mongoose.isValidObjectId(deviceId) ? deviceId : null },
-      ],
+        { code: rawId },
+        { deviceId: rawId },
+        { phone: rawId },
+        phoneRegex ? { phone: phoneRegex } : null,
+        { name: new RegExp('^' + rawId + '$', 'i') },
+        mongoose.isValidObjectId(rawId) ? { _id: rawId } : null,
+      ].filter(Boolean),
     });
   }
 
@@ -128,16 +135,21 @@ async function processTelemetryPoint(point, clientIp, io = null) {
       type: 'Point',
       coordinates: [lng, lat],
       address: targetPerson.location?.address || `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
+      timestamp: pointTime,
     };
-    targetPerson.speed = speed;
-    targetPerson.accuracy = accuracy;
-    targetPerson.batteryLevel = battery;
     targetPerson.hasReportedLocation = true;
-    targetPerson.status = isPanic ? 'alert' : 'active';
+    targetPerson.speed = speed;
+    targetPerson.gpsAccuracy = accuracy;
+    targetPerson.batteryLevel = battery;
     targetPerson.lastSeen = receivedAt;
-    await targetPerson.save();
+    targetPerson.status = isPanic ? 'panic' : 'normal';
 
     if (isPanic) {
+      targetPerson.panicAlert = {
+        active: true,
+        triggeredAt: pointTime,
+        message: '🚨 ¡BOTÓN DE PÁNICO SOS ACTIVADO DESDE CELULAR!',
+      };
       analyzePerson(targetPerson, true).catch(() => {});
     }
 
