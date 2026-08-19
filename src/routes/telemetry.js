@@ -3,11 +3,10 @@ import mongoose from 'mongoose';
 import Vehicle from '../models/Vehicle.js';
 import PersonTracker from '../models/PersonTracker.js';
 import User from '../models/User.js';
-import LocationHistory from '../models/LocationHistory.js';
 import SensorData from '../models/SensorData.js';
 import DeviceCommand from '../models/DeviceCommand.js';
 import { authenticate } from '../middleware/auth.js';
-import { broadcastLocation } from '../socket/index.js';
+import { broadcastVehicleUpdate } from '../socket/index.js';
 import { analyzeVehicle, analyzePerson } from '../services/alertEngine.js';
 
 const router = express.Router();
@@ -106,24 +105,8 @@ async function processTelemetryPoint(point, clientIp, io = null) {
       timestamp: pointTime,
     }).catch(() => {});
 
-    // Save LocationHistory
-    await LocationHistory.create({
-      vehicle: targetVehicle._id,
-      company: targetVehicle.company,
-      location: {
-        type: 'Point',
-        coordinates: [lng, lat],
-        address: targetVehicle.location?.address,
-      },
-      speed,
-      heading,
-      altitude,
-      accuracy,
-      timestamp: pointTime,
-    }).catch(() => {});
-
     if (io) {
-      broadcastLocation(io, targetVehicle._id, targetVehicle.company, {
+      broadcastVehicleUpdate(io, targetVehicle._id, {
         lat,
         lng,
         speed,
