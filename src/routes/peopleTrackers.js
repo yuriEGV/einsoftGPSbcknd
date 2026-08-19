@@ -270,6 +270,35 @@ router.post('/:id/panic', authenticate, async (req, res) => {
   }
 });
 
+// ─── POST /api/people-trackers/:id/ping — Solicitar ping satelital / activar ───
+router.post('/:id/ping', authenticate, async (req, res) => {
+  try {
+    const tracker = await PersonTracker.findById(req.params.id);
+    if (!tracker) {
+      return res.status(404).json({ error: 'Persona no encontrada.' });
+    }
+
+    tracker.lastSeen = new Date();
+    if (tracker.status === 'offline') {
+      tracker.status = 'normal';
+    }
+    await tracker.save();
+
+    if (req.io) {
+      req.io.emit('person_location_update', tracker);
+      req.io.emit(`device_command_${tracker.deviceId || tracker.trackerCode}`, {
+        command: 'LOCATE_NOW',
+        timestamp: new Date(),
+      });
+    }
+
+    res.json({ success: true, message: `Ping emitido a ${tracker.name}`, tracker });
+  } catch (error) {
+    console.error('Error POST /people-trackers/:id/ping:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ─── DELETE /api/people-trackers/:id — Remove tracked person ───────────────
 router.delete('/:id', authenticate, async (req, res) => {
   try {

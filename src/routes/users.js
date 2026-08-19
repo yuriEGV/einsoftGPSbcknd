@@ -103,14 +103,14 @@ router.post('/:id/reset-password', authenticate, requirePermission('users.update
 // ─── PUT /users/:id — Editar usuario ─────────────────────────────────────────
 router.put('/:id', authenticate, requirePermission('users.update'), async (req, res) => {
   try {
-    const { name, email, role, status, companyId } = req.body;
+    const { name, email, role, status, companyId, phone, imei } = req.body;
 
     const scope = getUserScope(req.user);
     const filter = { ...scope, _id: req.params.id };
     const targetUser = await User.findOne(filter);
     if (!targetUser) return res.status(404).json({ error: 'Usuario no encontrado o sin permiso' });
 
-    const updateFields = { name, email, role, status, updatedAt: new Date() };
+    const updateFields = { name, email, role, status, phone, imei, updatedAt: new Date() };
 
     // Solo superadmin puede mover un usuario a otra empresa
     if (req.user.role === 'superadmin' && companyId !== undefined) {
@@ -124,6 +124,18 @@ router.put('/:id', authenticate, requirePermission('users.update'), async (req, 
     }
 
     const updatedUser = await User.findByIdAndUpdate(req.params.id, updateFields, { new: true }).select('-password');
+
+    // Sincronizar IMEI con PersonTracker si existe
+    if (imei) {
+      const PersonTracker = mongoose.model('PersonTracker');
+      if (PersonTracker) {
+        await PersonTracker.updateMany(
+          { $or: [{ user: updatedUser._id }, { name: updatedUser.name }, { phone: updatedUser.phone }] },
+          { $set: { deviceId: imei, lastSeen: new Date() } }
+        ).catch(() => {});
+      }
+    }
+
     res.json(updatedUser);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -187,13 +199,8 @@ router.post('/', authenticate, requirePermission('users.create'), async (req, re
       role,
       company,
       phone,
+      imei: imei || deviceId || undefined,
     };
-
-    // Campos adicionales para Usuario Celular GPS
-    if (role === 'mobile_gps_user' || role === 'driver') {
-      if (imei) userData.imei = imei;
-      if (deviceId) userData.deviceId = deviceId;
-    }
 
     const user = new User(userData);
     await user.save();
