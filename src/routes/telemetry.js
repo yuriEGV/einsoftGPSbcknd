@@ -46,7 +46,7 @@ async function processTelemetryPoint(point, clientIp, io = null) {
   }
 
   // 2. Check if matches PersonTracker by code, deviceId, phone (or digits), or name
-  if (!targetVehicle && (trackerCode || deviceId)) {
+  if (trackerCode || deviceId) {
     const rawId = String(trackerCode || deviceId).trim();
     const cleanDigits = rawId.replace(/\D/g, '');
     const phoneRegex = cleanDigits.length >= 7 ? new RegExp(cleanDigits.slice(-8) + '$') : null;
@@ -65,10 +65,10 @@ async function processTelemetryPoint(point, clientIp, io = null) {
   }
 
   // 3. Check if matches User
-  if (!targetVehicle && !targetPerson && userId && mongoose.isValidObjectId(userId)) {
+  if (userId && mongoose.isValidObjectId(userId)) {
     const user = await User.findById(userId);
     if (user) {
-      if (user.personTracker) {
+      if (!targetPerson && user.personTracker) {
         targetPerson = await PersonTracker.findById(user.personTracker);
       }
       user.lastBatteryLevel = battery;
@@ -140,10 +140,14 @@ async function processTelemetryPoint(point, clientIp, io = null) {
   // 5. Update PersonTracker if matched
   if (targetPerson) {
     if (hasCoords) {
+      const resolvedAddress = (targetPerson.location?.address && !targetPerson.location.address.includes('Sin señal'))
+        ? targetPerson.location.address
+        : `GPS (${lat.toFixed(5)}, ${lng.toFixed(5)})`;
+
       targetPerson.location = {
         type: 'Point',
         coordinates: [lng, lat],
-        address: targetPerson.location?.address || `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
+        address: resolvedAddress,
         timestamp: pointTime,
       };
       targetPerson.hasReportedLocation = true;
