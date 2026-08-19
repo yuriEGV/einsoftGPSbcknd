@@ -90,6 +90,15 @@ const personTrackerSchema = new mongoose.Schema({
     type: Number,
     default: 0,
   },
+  deviceId: {
+    type: String,
+    default: '',
+    index: true,
+  },
+  lastSeen: {
+    type: Date,
+    default: Date.now,
+  },
 }, {
   timestamps: true,
 });
