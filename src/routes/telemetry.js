@@ -29,12 +29,9 @@ async function processTelemetryPoint(point, clientIp, io = null) {
     isPanic = false,
   } = point;
 
-  if (latitude == null || longitude == null || isNaN(latitude) || isNaN(longitude)) {
-    return { error: 'Coordenadas inválidas' };
-  }
-
-  const lat = Number(latitude);
-  const lng = Number(longitude);
+  const lat = latitude != null && !isNaN(Number(latitude)) ? Number(latitude) : null;
+  const lng = longitude != null && !isNaN(Number(longitude)) ? Number(longitude) : null;
+  const hasCoords = lat != null && lng != null && (lat !== 0 || lng !== 0);
   const receivedAt = new Date();
   const pointTime = new Date(timestamp);
 
@@ -56,7 +53,8 @@ async function processTelemetryPoint(point, clientIp, io = null) {
 
     targetPerson = await PersonTracker.findOne({
       $or: [
-        { code: rawId },
+        { trackerCode: rawId },
+        { trackerCode: new RegExp('^' + rawId + '$', 'i') },
         { deviceId: rawId },
         { phone: rawId },
         phoneRegex ? { phone: phoneRegex } : null,
@@ -82,15 +80,17 @@ async function processTelemetryPoint(point, clientIp, io = null) {
 
   // 4. Update Vehicle if matched
   if (targetVehicle) {
-    targetVehicle.location = {
-      type: 'Point',
-      coordinates: [lng, lat],
-      address: targetVehicle.location?.address || `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
-    };
-    targetVehicle.speed = speed;
-    targetVehicle.heading = heading;
-    targetVehicle.altitude = altitude;
-    targetVehicle.accuracy = accuracy;
+    if (hasCoords) {
+      targetVehicle.location = {
+        type: 'Point',
+        coordinates: [lng, lat],
+        address: targetVehicle.location?.address || `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
+      };
+      targetVehicle.speed = speed;
+      targetVehicle.heading = heading;
+      targetVehicle.altitude = altitude;
+      targetVehicle.accuracy = accuracy;
+    }
     targetVehicle.lastUpdate = pointTime;
     targetVehicle.status = isPanic ? 'alert' : 'active';
     if (!targetVehicle.sensors) targetVehicle.sensors = {};
@@ -98,15 +98,21 @@ async function processTelemetryPoint(point, clientIp, io = null) {
     await targetVehicle.save();
 
     // Record SensorData
-    await SensorData.create({
+    SensorData.create({
       vehicle: targetVehicle._id,
-      company: targetVehicle.company,
-      gps: {
-        coordinates: [lng, lat],
+      location: {
+        type: 'Point',
+        coordinates: [lng || 0, lat || 0],
+      },
+      speed,
+      heading,
+      altitude,
+      accuracy,
+      sensors: {
         speed,
-        heading,
         altitude,
         accuracy,
+        heading,
       },
       battery: { level: battery, isCharging },
       timestamp: pointTime,
@@ -114,8 +120,8 @@ async function processTelemetryPoint(point, clientIp, io = null) {
 
     if (io) {
       broadcastVehicleUpdate(io, targetVehicle._id, {
-        lat,
-        lng,
+        lat: lat || targetVehicle.location?.coordinates?.[1],
+        lng: lng || targetVehicle.location?.coordinates?.[0],
         speed,
         heading,
         altitude,
@@ -126,20 +132,24 @@ async function processTelemetryPoint(point, clientIp, io = null) {
       });
     }
 
-    analyzeVehicle(targetVehicle, { gps: { coordinates: [lng, lat], speed }, battery: { level: battery }, alarmSensor: isPanic }, io).catch(() => {});
+    if (hasCoords) {
+      analyzeVehicle(targetVehicle, { gps: { coordinates: [lng, lat], speed }, battery: { level: battery }, alarmSensor: isPanic }, io).catch(() => {});
+    }
   }
 
   // 5. Update PersonTracker if matched
   if (targetPerson) {
-    targetPerson.location = {
-      type: 'Point',
-      coordinates: [lng, lat],
-      address: targetPerson.location?.address || `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
-      timestamp: pointTime,
-    };
-    targetPerson.hasReportedLocation = true;
-    targetPerson.speed = speed;
-    targetPerson.gpsAccuracy = accuracy;
+    if (hasCoords) {
+      targetPerson.location = {
+        type: 'Point',
+        coordinates: [lng, lat],
+        address: targetPerson.location?.address || `${lat.toFixed(4)}, ${lng.toFixed(4)}`,
+        timestamp: pointTime,
+      };
+      targetPerson.hasReportedLocation = true;
+      targetPerson.speed = speed;
+      targetPerson.gpsAccuracy = accuracy;
+    }
     targetPerson.batteryLevel = battery;
     targetPerson.lastSeen = receivedAt;
     targetPerson.status = isPanic ? 'panic' : 'normal';
@@ -153,15 +163,21 @@ async function processTelemetryPoint(point, clientIp, io = null) {
       analyzePerson(targetPerson, true).catch(() => {});
     }
 
+    await targetPerson.save();
+
     if (io) {
       io.emit('person_location_update', {
         trackerId: targetPerson._id,
-        code: targetPerson.code,
+        code: targetPerson.trackerCode || targetPerson.code,
         name: targetPerson.name,
-        location: { lat, lng, address: targetPerson.location.address },
-        speed,
-        accuracy,
-        batteryLevel: battery,
+        location: targetPerson.location ? {
+          lat: targetPerson.location.coordinates[1],
+          lng: targetPerson.location.coordinates[0],
+          address: targetPerson.location.address,
+        } : null,
+        speed: targetPerson.speed || 0,
+        accuracy: targetPerson.gpsAccuracy || 0,
+        batteryLevel: targetPerson.batteryLevel,
         status: targetPerson.status,
         timestamp: pointTime,
       });

@@ -230,6 +230,20 @@ async function handlePanico(chatId) {
   }
 }
 
+async function handleLimpiarAlertas(chatId) {
+  const [panicsResolved, alertsAck] = await Promise.all([
+    PanicAlert.updateMany({ status: 'ACTIVE' }, { status: 'RESOLVED', resolvedAt: new Date() }),
+    Alert.updateMany({ acknowledged: false }, { acknowledged: true }),
+    PersonTracker.updateMany({ 'panicAlert.active': true }, { 'panicAlert.active': false, 'panicAlert.resolvedAt': new Date(), status: 'normal' }),
+  ]);
+
+  await sendMessage(chatId,
+    `🧹 <b>¡Alertas y Pánicos Resueltos!</b>\n\n` +
+    `✅ Se archivaron <b>${panicsResolved.modifiedCount || 0}</b> pánicos y <b>${alertsAck.modifiedCount || 0}</b> alertas de flota.\n` +
+    `El panel y el mapa han quedado limpios.`
+  );
+}
+
 async function handlePersonas(chatId) {
   const persons = await PersonTracker.find({})
     .select('name phone status batteryLevel hasReportedLocation location updatedAt')
@@ -352,6 +366,9 @@ export async function handleMessage(message) {
       case '/estado':      return handleUbicacion(chatId, args); // alias
       case '/alertas':     return handleAlertas(chatId);
       case '/panico':      return handlePanico(chatId);
+      case '/limpiar_alertas':
+      case '/limpiar':
+      case '/resolver_todo': return handleLimpiarAlertas(chatId);
       case '/personas':    return handlePersonas(chatId);
       case '/sin_gps':     return handleSinGps(chatId);
       case '/ayuda':

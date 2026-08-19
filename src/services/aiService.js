@@ -359,6 +359,19 @@ async function generateFallbackAnalysis(userMessage) {
         `\n💡 *Tip: Puedes ver su trayecto y posición en vivo en la pestaña Vehículos.*`;
     }
 
+    // 2.5 Limpieza de ALERTAS / PÁNICOS (Lenguaje Natural)
+    if (q.includes('limpiar') || q.includes('borrar') || q.includes('reset') || (q.includes('resolver') && (q.includes('alerta') || q.includes('panico') || q.includes('pánico') || q.includes('todo')))) {
+      const [panicsResolved, alertsAck] = await Promise.all([
+        PanicAlert.updateMany({ status: 'ACTIVE' }, { status: 'RESOLVED', resolvedAt: new Date() }),
+        Alert.updateMany({ acknowledged: false }, { acknowledged: true }),
+        PersonTracker.updateMany({ 'panicAlert.active': true }, { 'panicAlert.active': false, 'panicAlert.resolvedAt': new Date(), status: 'normal' }),
+      ]);
+
+      return `🧹 **¡Alertas y Pánicos Resueltos con Éxito!**\n\n` +
+        `✅ Se archivaron **${panicsResolved.modifiedCount || 0}** alertas de pánico y **${alertsAck.modifiedCount || 0}** avisos de flota.\n` +
+        `El panel de control queda limpio y preparado para nuevas emergencias en vivo.`;
+    }
+
     // 3. Consulta de ALERTAS, PÁNICOS Y EMERGENCIAS
     if (q.includes('alerta') || q.includes('pánico') || q.includes('panico') || q.includes('sos') || q.includes('emergencia') || q.includes('problema') || q.includes('peligro')) {
       const [panics, alerts] = await Promise.all([
@@ -368,12 +381,27 @@ async function generateFallbackAnalysis(userMessage) {
 
       let res = `🚨 **Panel de Emergencias y Alertas Activas**\n\n`;
       if (panics.length > 0) {
-        res += `⚠️ **Pánicos SOS en Curso (${panics.length}):**\n`;
+        // Group by person/vehicle
+        const grouped = {};
         panics.forEach(p => {
-          const entity = p.source === 'vehicle' ? `🚗 Vehículo ${p.vehicle?.licensePlate || 'Desconocido'}` : `👤 Persona ${p.person?.name || 'Desconocido'}`;
-          res += `• **${entity}** — 📍 ${p.address || 'Ubicación de emergencia'} (${new Date(p.triggeredAt).toLocaleTimeString('es-CL')})\n`;
+          const key = p.source === 'vehicle' ? `🚗 Vehículo ${p.vehicle?.licensePlate || 'Desconocido'}` : `👤 Persona ${p.person?.name || 'Desconocido'}`;
+          if (!grouped[key]) {
+            grouped[key] = { name: key, count: 0, lastTime: p.triggeredAt, address: p.address };
+          }
+          grouped[key].count++;
+          if (new Date(p.triggeredAt) > new Date(grouped[key].lastTime)) {
+            grouped[key].lastTime = p.triggeredAt;
+            grouped[key].address = p.address;
+          }
         });
-        res += `\n*Para resolver estas emergencias, pulsa el botón correspondiente en Telegram o en la ficha del vehículo.*\n`;
+
+        const groupList = Object.values(grouped);
+        res += `⚠️ **Pánicos SOS en Curso (${panics.length} en ${groupList.length} emisores):**\n`;
+        groupList.forEach(g => {
+          const countBadge = g.count > 1 ? ` (${g.count} alertas acumuladas)` : '';
+          res += `• **${g.name}**${countBadge} — 📍 ${g.address || 'Ubicación de emergencia'} (${new Date(g.lastTime).toLocaleTimeString('es-CL')})\n`;
+        });
+        res += `\n💡 *Para resolver o limpiar todo, escribe:* **"limpiar alertas"** *o usa /limpiar_alertas.*\n`;
       } else {
         res += `✅ **Pánicos SOS:** No hay emergencias críticas de pánico activas en este instante.\n`;
       }
