@@ -17,11 +17,13 @@ import userRoutes from './routes/users.js';
 import companyRoutes from './routes/companies.js';
 import peopleTrackerRoutes from './routes/peopleTrackers.js';
 import botRoutes from './routes/bot.js';
+import telemetryRoutes from './routes/telemetry.js';
 import mongoose from 'mongoose';
 import './models/Alert.js'; // Ensure Alert model is registered early
 import './models/PersonTracker.js';
 import './models/PanicAlert.js';
 import './models/BotUser.js';
+import './models/DeviceCommand.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { requestLogger } from './middleware/logger.js';
 
@@ -111,6 +113,7 @@ app.use('/api/users', userRoutes);
 app.use('/api/companies', companyRoutes);
 app.use('/api/people-trackers', peopleTrackerRoutes);
 app.use('/api/bot', botRoutes);
+app.use('/api/telemetry', telemetryRoutes);
 
 // 404 Handler
 app.use((req, res) => {
