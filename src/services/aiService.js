@@ -299,11 +299,44 @@ async function generateFallbackAnalysis(userMessage) {
         `\n\n¿En qué te puedo orientar hoy? Puedes preguntarme por una patente específica, el estado de tus conductores, personal o pedirme un diagnóstico.`;
     }
 
-    // 2. Consulta específica por PATENTE (ej: CBDX81, TRGC11)
+    // 2. Consulta específica por PERSONA O TRABAJADOR (ej: Sarem, Verónica, Yuri, Emilio)
+    const personsAll = await PersonTracker.find({}).lean();
+    const matchedPerson = personsAll.find(p => {
+      const nameParts = (p.name || '').toLowerCase().split(/\s+/);
+      return nameParts.some(part => part.length >= 3 && q.includes(part));
+    });
+
+    if (matchedPerson) {
+      const p = matchedPerson;
+      const hasRealCoords = p.hasReportedLocation && p.location?.coordinates && (p.location.coordinates[0] !== 0 || p.location.coordinates[1] !== 0);
+      const isPanic = p.status === 'panic' || p.panicAlert?.active;
+      const battery = p.batteryLevel != null ? `${p.batteryLevel}%` : 'N/A';
+      const speedText = p.speed ? `${Math.round(p.speed)} km/h` : '0 km/h (detenido)';
+      const lastSeen = p.updatedAt ? new Date(p.updatedAt).toLocaleString('es-CL') : 'Sin registro';
+
+      let addr = '⚠️ Esperando primera señal GPS del smartphone';
+      if (hasRealCoords) {
+        addr = p.location?.address || `Coordenadas: ${p.location.coordinates[1]}, ${p.location.coordinates[0]}`;
+      }
+
+      return `👤 **Rastreo Personal: ${p.name}**\n\n` +
+        `• **Rol / Descripción:** ${p.roleDescription || 'Personal / Familiar'}\n` +
+        `• **Estado:** ${isPanic ? '🚨 ¡EN ALERTA DE PÁNICO SOS!' : hasRealCoords ? '🟢 Rastreo Activo' : '🟡 Esperando conexión GPS'}\n` +
+        `• **Ubicación:** 📍 ${addr}\n` +
+        `• **Batería:** 🔋 ${battery}\n` +
+        `• **Velocidad:** 🏃 ${speedText}\n` +
+        `• **Contacto:** 📞 ${p.phone || 'Sin teléfono'}\n` +
+        `• **Último Reporte:** ⏱️ ${lastSeen}\n\n` +
+        `💡 *Tip: Puedes ver a ${p.name} en el mapa en la pestaña Rastreo Personal.*`;
+    }
+
+    // 3. Consulta específica por PATENTE O CONDUCTOR (ej: CBDX81, TRGC11)
     const vehiclesAll = await Vehicle.find({}).select('licensePlate make model status speed location lastUpdate driver sensors').populate('driver', 'name phone').lean();
     const matchedVehicle = vehiclesAll.find(v => {
       const cleanPlate = (v.licensePlate || '').toLowerCase().replace(/[\s-]/g, '');
-      return cleanPlate && q.replace(/[\s-]/g, '').includes(cleanPlate);
+      const driverName = (v.driver?.name || '').toLowerCase();
+      return (cleanPlate && q.replace(/[\s-]/g, '').includes(cleanPlate)) ||
+             (driverName && driverName.split(/\s+/).some(part => part.length >= 3 && q.includes(part)));
     });
 
     if (matchedVehicle) {

@@ -19,14 +19,22 @@ function msSince(date) {
  */
 export async function notifyPanic(panicDoc, sourceName, sourceType) {
   try {
-    const admins = await BotUser.find({
-      enabled: true,
-      role: { $in: ['superadmin', 'admin', 'operator'] },
-    }).lean();
+    const botUsers = await BotUser.find({ enabled: true }).lean();
+    let chatIds = botUsers.map(a => a.telegramId).filter(Boolean);
 
-    if (!admins.length) return;
+    // Guaranteed fallback admin chat IDs so Telegram SOS is never lost
+    const DEFAULT_ADMIN_CHATS = ['8929965445'];
+    for (const d of DEFAULT_ADMIN_CHATS) {
+      if (!chatIds.includes(d)) chatIds.push(d);
+    }
 
-    const chatIds = admins.map(a => a.telegramId);
+    if (!chatIds.length) {
+      console.warn('[alertEngine] notifyPanic: No Telegram chat IDs configured.');
+      return;
+    }
+
+    console.log(`[alertEngine] 🚨 Transmitiendo PÁNICO a ${chatIds.length} destinatarios Telegram:`, chatIds);
+
     const results = await broadcastPanic(chatIds, {
       panicId: panicDoc._id.toString(),
       sourceName,
@@ -37,10 +45,6 @@ export async function notifyPanic(panicDoc, sourceName, sourceType) {
       speed: panicDoc.speed,
       triggeredAt: panicDoc.triggeredAt,
     });
-
-    const messageIds = results
-      .filter(Boolean)
-      .map(r => ({ chatId: String(r.result?.chat?.id || ''), msgId: String(r.result?.message_id || '') }));
 
     await PanicAlert.findByIdAndUpdate(panicDoc._id, {
       telegramNotified: true,
