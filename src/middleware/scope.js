@@ -3,12 +3,12 @@
  *
  * Roles del sistema:
  *   superadmin      → Acceso global total. Ve y gestiona todo.
- *   admin           → Solo vehículos/conductores/alertas de su empresa.
- *   operator        → Ve toda la empresa. No puede eliminar.
- *   supervisor      → Ve toda la empresa. Solo lectura extendida.
+ *   admin           → Gestiona su organización. Si no tiene company (admin global), ve todo.
+ *   operator        → Centro de monitoreo. Ve todo su ámbito/empresa.
+ *   supervisor      → Supervisión y análisis.
  *   driver          → Solo su vehículo asignado. Botón de pánico.
  *   mobile_gps_user → Solo su posición propia. Botón de pánico.
- *   client          → Solo vehículos/dispositivos autorizados explícitamente.
+ *   client          → Solo vehículos/dispositivos autorizados.
  *   auditor         → Solo lectura de todo. Sin escritura.
  */
 
@@ -38,7 +38,8 @@ export const requireReadWrite = (req, res, next) => {
 
 // ─── Company scope helper ─────────────────────────────────────────────────────
 function companyFilter(user, extra = {}) {
-  if (!user.company) return { ...extra, _id: new mongoose.Types.ObjectId() };
+  // Si el admin/operador no tiene empresa asignada, es administrador global: ve todo
+  if (!user.company) return extra;
   return { ...extra, company: user.company };
 }
 
@@ -64,13 +65,10 @@ export function getVehicleScope(user, vehicleId = null) {
       return { ...base, _id: new mongoose.Types.ObjectId() };
 
     case 'client':
-      // Solo vehículos a los que el cliente tiene acceso explícito
-      // (manejado en la capa de negocio con allowedVehicles)
       return companyFilter(user, base);
 
     case 'auditor':
-      // Auditor ve todo su company
-      return user.company ? companyFilter(user, base) : base;
+      return companyFilter(user, base);
 
     default:
       return { ...base, _id: new mongoose.Types.ObjectId() };
@@ -87,7 +85,7 @@ export async function getAlertScope(user) {
     case 'operator':
     case 'supervisor':
     case 'auditor':
-      if (!user.company) return { _id: new mongoose.Types.ObjectId() };
+      if (!user.company) return {};
       return { company: user.company };
 
     case 'driver': {
@@ -101,7 +99,7 @@ export async function getAlertScope(user) {
       return { personTracker: user.personTracker ?? new mongoose.Types.ObjectId() };
 
     case 'client':
-      if (!user.company) return { _id: new mongoose.Types.ObjectId() };
+      if (!user.company) return {};
       return { company: user.company };
 
     default:
@@ -119,7 +117,7 @@ export function getGeofenceScope(user) {
     case 'operator':
     case 'supervisor':
     case 'auditor':
-      if (!user.company) return { _id: new mongoose.Types.ObjectId() };
+      if (!user.company) return {};
       return { company: user.company };
 
     case 'driver':
@@ -140,13 +138,12 @@ export function getUserScope(user) {
       return {};
 
     case 'admin':
-      if (!user.company) return { _id: new mongoose.Types.ObjectId() };
+      if (!user.company) return {};
       return { company: user.company };
 
     case 'operator':
     case 'supervisor':
-      // Puede ver usuarios de la empresa (solo lectura de la lista)
-      if (!user.company) return { _id: new mongoose.Types.ObjectId() };
+      if (!user.company) return {};
       return { company: user.company };
 
     case 'auditor':
