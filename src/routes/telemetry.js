@@ -159,23 +159,65 @@ async function processTelemetryPoint(point, clientIp, io = null) {
   return { success: true, target: targetVehicle ? 'vehicle' : targetPerson ? 'person' : 'general', receivedAt };
 }
 
-// ─── POST /api/telemetry/report — Recepción en tiempo real de telemetría ──────
-router.post('/report', async (req, res) => {
-  try {
-    const clientIp = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '127.0.0.1';
-    const payload = req.body;
+// ─── Helper: Normalize Traccar, OsmAnd and Native Payloads ─────────────────────
+function normalizePayload(raw) {
+  const deviceId = raw.deviceId || raw.id || raw.device_id || raw.uniqueId || raw.imei || raw.phone;
+  const trackerCode = raw.trackerCode || raw.code || raw.id;
+  const lat = raw.latitude != null ? raw.latitude : (raw.lat != null ? raw.lat : null);
+  const lng = raw.longitude != null ? raw.longitude : (raw.lon != null ? raw.lon : (raw.lng != null ? raw.lng : null));
+  const alt = raw.altitude != null ? raw.altitude : (raw.alt != null ? raw.alt : 0);
+  const spd = raw.speed != null ? Number(raw.speed) : 0;
+  const hdg = raw.heading != null ? raw.heading : (raw.bearing != null ? raw.bearing : (raw.course != null ? raw.course : 0));
+  const batt = raw.battery != null ? raw.battery : (raw.batt != null ? raw.batt : (raw.batteryLevel != null ? raw.batteryLevel : 100));
+  const acc = raw.accuracy != null ? raw.accuracy : (raw.acc != null ? raw.acc : (raw.hdop != null ? Number(raw.hdop) * 5 : 0));
+  const isPanic = raw.isPanic === true || raw.panic === 'true' || raw.alarm === 'sos' || raw.event === 'sos';
 
-    const result = await processTelemetryPoint(payload, clientIp, req.io);
+  let time = new Date();
+  if (raw.timestamp) {
+    const num = Number(raw.timestamp);
+    if (!isNaN(num)) {
+      time = num < 2000000000 ? new Date(num * 1000) : new Date(num);
+    } else {
+      time = new Date(raw.timestamp);
+    }
+  }
+
+  return {
+    deviceId: String(deviceId || ''),
+    trackerCode: String(trackerCode || ''),
+    userId: raw.userId || null,
+    latitude: lat != null ? Number(lat) : null,
+    longitude: lng != null ? Number(lng) : null,
+    altitude: Number(alt) || 0,
+    speed: spd > 0 && spd < 100 && raw.speed?.toString()?.includes('.') ? Math.round(spd * 1.852) : Math.round(spd), // knots to km/h fallback
+    heading: Number(hdg) || 0,
+    battery: Number(batt) || 100,
+    accuracy: Number(acc) || 0,
+    isCharging: raw.isCharging === true || raw.charge === 'true',
+    isPanic,
+    timestamp: isNaN(time.getTime()) ? new Date() : time,
+  };
+}
+
+// Universal telemetry handler (supports JSON body, URL query params, Traccar & OsmAnd)
+async function handleTelemetryRequest(req, res) {
+  try {
+    const raw = { ...req.query, ...req.body };
+    const normalized = normalizePayload(raw);
+
+    const clientIp = req.headers['x-forwarded-for'] || req.socket?.remoteAddress || '127.0.0.1';
+    const result = await processTelemetryPoint(normalized, clientIp, req.io);
+
     if (result.error) {
       return res.status(400).json({ error: result.error });
     }
 
     // Check for any pending bidirectional commands for this device
-    const deviceId = payload.deviceId || payload.trackerCode || payload.userId;
+    const targetId = normalized.deviceId || normalized.trackerCode || normalized.userId;
     let pendingCommands = [];
-    if (deviceId) {
+    if (targetId) {
       pendingCommands = await DeviceCommand.find({
-        deviceId: String(deviceId),
+        deviceId: String(targetId),
         status: 'PENDING',
       }).sort({ createdAt: 1 }).limit(5);
 
@@ -193,10 +235,18 @@ router.post('/report', async (req, res) => {
       commands: pendingCommands.map(c => ({ id: c._id, command: c.command, payload: c.payload })),
     });
   } catch (error) {
-    console.error('[telemetry/report] Error:', error);
+    console.error('[telemetry] Error:', error);
     res.status(500).json({ error: error.message });
   }
-});
+}
+
+// ─── GET & POST /api/telemetry (Traccar Client default root endpoint) ──────────
+router.get('/', handleTelemetryRequest);
+router.post('/', handleTelemetryRequest);
+
+// ─── GET & POST /api/telemetry/report ───────────────────────────────────────────
+router.get('/report', handleTelemetryRequest);
+router.post('/report', handleTelemetryRequest);
 
 // ─── POST /api/telemetry/batch — Sincronización de cola acumulada offline ───────
 router.post('/batch', async (req, res) => {
