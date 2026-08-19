@@ -154,6 +154,9 @@ async function processTelemetryPoint(point, clientIp, io = null) {
 
   // 5. Update PersonTracker if matched
   if (targetPerson) {
+    if (deviceId && targetPerson.deviceId !== deviceId) {
+      targetPerson.deviceId = deviceId;
+    }
     if (hasCoords) {
       const resolvedAddress = (targetPerson.location?.address && !targetPerson.location.address.includes('Sin señal'))
         ? targetPerson.location.address
