@@ -64,17 +64,32 @@ async function processTelemetryPoint(point, clientIp, io = null) {
     });
   }
 
-  // 3. Check if matches User
-  if (userId && mongoose.isValidObjectId(userId)) {
-    const user = await User.findById(userId);
-    if (user) {
-      if (!targetPerson && user.personTracker) {
-        targetPerson = await PersonTracker.findById(user.personTracker);
+  // 3. Check if matches User by userId, deviceId or IMEI
+  if (!targetPerson) {
+    const userMatch = await User.findOne({
+      $or: [
+        userId && mongoose.isValidObjectId(userId) ? { _id: userId } : null,
+        deviceId ? { imei: deviceId } : null,
+        deviceId ? { phone: deviceId } : null,
+        trackerCode ? { name: new RegExp('^' + trackerCode + '$', 'i') } : null,
+      ].filter(Boolean),
+    });
+
+    if (userMatch) {
+      targetPerson = await PersonTracker.findOne({
+        $or: [
+          { user: userMatch._id },
+          { name: userMatch.name },
+          { phone: userMatch.phone },
+        ],
+      });
+      if (targetPerson && deviceId && !targetPerson.deviceId) {
+        targetPerson.deviceId = deviceId;
       }
-      user.lastBatteryLevel = battery;
-      user.lastGpsAccuracy = accuracy;
-      user.lastSeen = receivedAt;
-      await user.save();
+      userMatch.lastBatteryLevel = battery;
+      userMatch.lastGpsAccuracy = accuracy;
+      userMatch.lastSeen = receivedAt;
+      await userMatch.save().catch(() => {});
     }
   }
 
