@@ -8,6 +8,7 @@ import DeviceCommand from '../models/DeviceCommand.js';
 import { authenticate } from '../middleware/auth.js';
 import { broadcastVehicleUpdate } from '../socket/index.js';
 import { analyzeVehicle, analyzePerson } from '../services/alertEngine.js';
+import { resolveCity } from './sensors.js';
 
 const router = express.Router();
 
@@ -158,14 +159,12 @@ async function processTelemetryPoint(point, clientIp, io = null) {
       targetPerson.deviceId = deviceId;
     }
     if (hasCoords) {
-      const resolvedAddress = (targetPerson.location?.address && !targetPerson.location.address.includes('Sin señal'))
-        ? targetPerson.location.address
-        : `GPS (${lat.toFixed(5)}, ${lng.toFixed(5)})`;
+      const { address: dynamicAddress } = resolveCity(lat, lng);
 
       targetPerson.location = {
         type: 'Point',
         coordinates: [lng, lat],
-        address: resolvedAddress,
+        address: dynamicAddress || `GPS (${lat.toFixed(5)}, ${lng.toFixed(5)})`,
         timestamp: pointTime,
       };
       targetPerson.hasReportedLocation = true;
