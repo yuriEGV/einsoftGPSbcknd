@@ -55,7 +55,7 @@ router.get('/', authenticate, async (req, res) => {
 // ─── POST /api/people-trackers — Register a person to track ──────────────────
 router.post('/', authenticate, async (req, res) => {
   try {
-    const { name, phone, roleDescription } = req.body;
+    const { name, phone, deviceId, roleDescription } = req.body;
 
     if (!name || !name.trim()) {
       return res.status(400).json({ error: 'El nombre de la persona es obligatorio.' });
@@ -78,6 +78,7 @@ router.post('/', authenticate, async (req, res) => {
     const newPerson = new PersonTracker({
       name: name.trim(),
       phone: phone ? phone.trim() : '',
+      deviceId: deviceId ? deviceId.trim() : undefined,
       roleDescription: roleDescription || 'Familiar / Personal',
       trackerCode,
       user: userId,
