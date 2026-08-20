@@ -1,6 +1,7 @@
 import express from 'express';
 import crypto from 'crypto';
 import PersonTracker from '../models/PersonTracker.js';
+import DeviceCommand from '../models/DeviceCommand.js';
 import Alert from '../models/Alert.js';
 import { authenticate } from '../middleware/auth.js';
 import { analyzePerson } from '../services/alertEngine.js';
@@ -272,7 +273,7 @@ router.post('/:id/panic', authenticate, async (req, res) => {
   }
 });
 
-// ─── POST /api/people-trackers/:id/ping — Solicitar ping satelital / activar ───
+// ─── POST /api/people-trackers/:id/ping — Solicitar ping satelital / despertar ───
 router.post('/:id/ping', authenticate, async (req, res) => {
   try {
     const tracker = await PersonTracker.findById(req.params.id);
@@ -286,15 +287,45 @@ router.post('/:id/ping', authenticate, async (req, res) => {
     }
     await tracker.save();
 
-    if (req.io) {
-      req.io.emit('person_location_update', tracker);
-      req.io.emit(`device_command_${tracker.deviceId || tracker.trackerCode}`, {
+    // 1. Guardar comando PENDING en base de datos para consumo por HTTP polling
+    const targetCode = tracker.deviceId || tracker.trackerCode;
+    if (targetCode) {
+      await DeviceCommand.create({
+        deviceId: targetCode,
         command: 'LOCATE_NOW',
-        timestamp: new Date(),
-      });
+        params: { forced: true, triggerBy: req.user?.name || 'Admin', timestamp: new Date() },
+        status: 'PENDING',
+      }).catch(() => {});
     }
 
-    res.json({ success: true, message: `Ping emitido a ${tracker.name}`, tracker });
+    // 2. Disparar evento de despertar en tiempo real por WebSocket
+    if (req.io) {
+      const wakePayload = {
+        trackerId: tracker._id,
+        deviceId: tracker.deviceId,
+        trackerCode: tracker.trackerCode,
+        name: tracker.name,
+        command: 'LOCATE_NOW',
+        timestamp: new Date(),
+      };
+
+      req.io.emit('force_gps_locate', wakePayload);
+      if (tracker.deviceId) {
+        req.io.emit(`device_command_${tracker.deviceId}`, { command: 'LOCATE_NOW', ...wakePayload });
+      }
+      if (tracker.trackerCode) {
+        req.io.emit(`device_command_${tracker.trackerCode}`, { command: 'LOCATE_NOW', ...wakePayload });
+      }
+
+      try {
+        req.io.of('/vehicles').emit('force_gps_locate', wakePayload);
+        if (tracker.deviceId) {
+          req.io.of('/vehicles').emit(`device_command_${tracker.deviceId}`, { command: 'LOCATE_NOW', ...wakePayload });
+        }
+      } catch (_) {}
+    }
+
+    res.json({ success: true, message: `Comando de localización satelital emitido a ${tracker.name}`, tracker });
   } catch (error) {
     console.error('Error POST /people-trackers/:id/ping:', error);
     res.status(500).json({ error: error.message });

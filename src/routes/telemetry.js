@@ -364,6 +364,49 @@ router.post('/command', authenticate, async (req, res) => {
   }
 });
 
+// ─── GET /api/telemetry/commands/pending — Polling de comandos pendientes ───────
+router.get('/commands/pending', async (req, res) => {
+  try {
+    const { deviceId, trackerCode } = req.query;
+    const queryIds = [deviceId, trackerCode].filter(Boolean);
+    if (queryIds.length === 0) return res.json({ commands: [] });
+
+    const pending = await DeviceCommand.find({
+      deviceId: { $in: queryIds },
+      status: 'PENDING',
+    }).limit(10);
+
+    if (pending.length > 0) {
+      await DeviceCommand.updateMany(
+        { _id: { $in: pending.map(p => p._id) } },
+        { status: 'SENT', sentAt: new Date() }
+      );
+    }
+
+    res.json({
+      commands: pending.map(c => ({ id: c._id, command: c.command, payload: c.payload || c.params })),
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── POST /api/telemetry/commands/:id/ack — Dispositivo confirma recepción ────
+router.post('/commands/:id/ack', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { response = {} } = req.body;
+    await DeviceCommand.findByIdAndUpdate(id, {
+      status: 'DELIVERED',
+      deliveredAt: new Date(),
+      responsePayload: response,
+    });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── POST /api/telemetry/commands/:cmdId/ack — Confirmar ejecución de comando ─
 router.post('/commands/:cmdId/ack', async (req, res) => {
   try {
