@@ -17,7 +17,18 @@ const deviceCommandSchema = new mongoose.Schema({
   },
   command: {
     type: String,
-    enum: ['LOCATE_NOW', 'SET_INTERVAL', 'EMERGENCY_MODE_ON', 'EMERGENCY_MODE_OFF', 'REBOOT'],
+    enum: [
+      'LOCATE_NOW',
+      'SET_INTERVAL',
+      'EMERGENCY_MODE_ON',
+      'EMERGENCY_MODE_OFF',
+      'REBOOT',
+      'ENGINE_CUT',
+      'ENGINE_RESTORE',
+      'DOOR_LOCK',
+      'DOOR_UNLOCK',
+      'ALARM_SIREN'
+    ],
     required: true,
   },
   payload: {

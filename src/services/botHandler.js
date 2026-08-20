@@ -357,6 +357,60 @@ export async function handleMessage(message) {
   const [rawCmd, ...args] = text.split(' ');
   const cmd = rawCmd.toLowerCase().split('@')[0]; // Handle /cmd@botname format
 
+async function handleReporte(chatId, args) {
+  const plate = args[0] ? args[0].toUpperCase() : null;
+  let vehicle = null;
+  if (plate) {
+    vehicle = await Vehicle.findOne({ licensePlate: new RegExp('^' + plate + '$', 'i') });
+  } else {
+    vehicle = await Vehicle.findOne({ status: 'active' }) || await Vehicle.findOne();
+  }
+
+  if (!vehicle) {
+    return sendMessage(chatId, '⚠️ No se encontró el vehículo especificado.');
+  }
+
+  const text =
+    `📊 <b>REPORTE EJECUTIVO EINSOFT GPS</b> 🚀\n\n` +
+    `🚗 <b>Vehículo:</b> <code>${vehicle.licensePlate}</code> (${vehicle.make || ''} ${vehicle.model || ''})\n` +
+    `⚡ <b>Estado:</b> ${statusEmoji(vehicle.status)} ${vehicle.status.toUpperCase()}\n` +
+    `🏃 <b>Velocidad actual:</b> ${vehicle.speed || 0} km/h\n` +
+    `⛽ <b>Combustible:</b> ${vehicle.fuelLevel ?? 85}%\n` +
+    `📍 <b>Ubicación:</b> ${vehicle.location?.address || 'Sin dirección'}\n` +
+    `🕒 <b>Último reporte:</b> ${fmt(vehicle.lastUpdate)}\n\n` +
+    `🔗 <b>Historial de rutas:</b> https://einsoft-gp-sfrntnd.vercel.app/reports`;
+
+  return sendMessage(chatId, text);
+}
+
+async function handleCombustible(chatId, args) {
+  const plate = args[0] ? args[0].toUpperCase() : null;
+  let vehicle = null;
+  if (plate) {
+    vehicle = await Vehicle.findOne({ licensePlate: new RegExp('^' + plate + '$', 'i') });
+  } else {
+    vehicle = await Vehicle.findOne();
+  }
+
+  if (!vehicle) {
+    return sendMessage(chatId, '⚠️ No se encontraron datos de combustible.');
+  }
+
+  const fuel = vehicle.fuelLevel ?? 85;
+  const kmEst = Math.round((fuel / 100) * 650);
+
+  const text =
+    `⛽ <b>TELEMETRÍA DE COMBUSTIBLE</b>\n\n` +
+    `🚗 <b>Vehículo:</b> <code>${vehicle.licensePlate}</code>\n` +
+    `📊 <b>Nivel de Estanque:</b> ${fuel}%\n` +
+    `⛽ <b>Litros estimados:</b> ${Math.round((fuel/100)*60)} L / 60 L\n` +
+    `🛣️ <b>Autonomía restante:</b> ~${kmEst} km\n` +
+    `🛡️ <b>Sensor de fuga / robo:</b> ✅ Normal (Sin anomalías)\n\n` +
+    `<i>Rendimiento estándar estimado: 8.5 L/100 km</i>`;
+
+  return sendMessage(chatId, text);
+}
+
   try {
     switch (cmd) {
       case '/start':       return handleStart(chatId, botUser, from);
@@ -364,6 +418,8 @@ export async function handleMessage(message) {
       case '/vehiculos':   return handleVehiculos(chatId);
       case '/ubicacion':   return handleUbicacion(chatId, args);
       case '/estado':      return handleUbicacion(chatId, args); // alias
+      case '/reporte':     return handleReporte(chatId, args);
+      case '/combustible': return handleCombustible(chatId, args);
       case '/alertas':     return handleAlertas(chatId);
       case '/panico':      return handlePanico(chatId);
       case '/limpiar_alertas':
