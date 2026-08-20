@@ -332,6 +332,32 @@ router.post('/:id/ping', authenticate, async (req, res) => {
   }
 });
 
+// ─── POST /api/people-trackers/:id/reset-location — Limpiar ubicación antigua ──
+router.post('/:id/reset-location', authenticate, async (req, res) => {
+  try {
+    const tracker = await PersonTracker.findById(req.params.id);
+    if (!tracker) return res.status(404).json({ error: 'Persona no encontrada.' });
+
+    tracker.hasReportedLocation = false;
+    tracker.location = {
+      type: 'Point',
+      coordinates: [0, 0],
+      address: 'Sin señal GPS reciente (Esperando conexión del teléfono)',
+      timestamp: null,
+    };
+    tracker.speed = 0;
+    tracker.gpsAccuracy = null;
+    await tracker.save();
+
+    if (req.io) {
+      req.io.emit('person_location_update', tracker);
+    }
+    res.json({ success: true, message: 'Ubicación antigua limpiada correctamente.', tracker });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ─── DELETE /api/people-trackers/:id — Remove tracked person ───────────────
 router.delete('/:id', authenticate, async (req, res) => {
   try {
