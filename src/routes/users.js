@@ -1,6 +1,8 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
+import mongoose from 'mongoose';
 import User from '../models/User.js';
+import PersonTracker from '../models/PersonTracker.js';
 import { authenticate, requirePermission } from '../middleware/auth.js';
 import { getUserScope } from '../middleware/scope.js';
 
@@ -126,14 +128,11 @@ router.put('/:id', authenticate, requirePermission('users.update'), async (req, 
     const updatedUser = await User.findByIdAndUpdate(req.params.id, updateFields, { new: true }).select('-password');
 
     // Sincronizar IMEI con PersonTracker si existe
-    if (imei) {
-      const PersonTracker = mongoose.model('PersonTracker');
-      if (PersonTracker) {
-        await PersonTracker.updateMany(
-          { $or: [{ user: updatedUser._id }, { name: updatedUser.name }, { phone: updatedUser.phone }] },
-          { $set: { deviceId: imei, lastSeen: new Date() } }
-        ).catch(() => {});
-      }
+    if (imei && updatedUser) {
+      await PersonTracker.updateMany(
+        { $or: [{ user: updatedUser._id }, { name: updatedUser.name }, { phone: updatedUser.phone }] },
+        { $set: { deviceId: imei, lastSeen: new Date() } }
+      ).catch(() => {});
     }
 
     res.json(updatedUser);
