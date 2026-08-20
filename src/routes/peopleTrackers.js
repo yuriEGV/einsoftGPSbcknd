@@ -30,8 +30,9 @@ router.get('/', authenticate, async (req, res) => {
     const processed = trackers.map(t => {
       const obj = t.toObject();
       const coords = obj.location?.coordinates;
-      const hasCoords = coords && Array.isArray(coords) && (coords[0] !== 0 || coords[1] !== 0) && !(coords[0] === -70.64827 && coords[1] === -33.45694);
-      if (!obj.hasReportedLocation && !hasCoords) {
+      const hasRealCoords = obj.hasReportedLocation === true && coords && Array.isArray(coords) && (coords[0] !== 0 || coords[1] !== 0);
+
+      if (!hasRealCoords) {
         obj.hasReportedLocation = false;
         obj.location = {
           type: 'Point',
@@ -39,9 +40,6 @@ router.get('/', authenticate, async (req, res) => {
           address: 'Sin señal GPS inicial (Esperando conexión del teléfono)',
           timestamp: obj.location?.timestamp || obj.updatedAt,
         };
-      } else if (hasCoords && (!obj.location?.address || obj.location.address.includes('Sin señal'))) {
-        obj.hasReportedLocation = true;
-        obj.location.address = `GPS (${coords[1].toFixed(5)}, ${coords[0].toFixed(5)})`;
       }
       return obj;
     });
