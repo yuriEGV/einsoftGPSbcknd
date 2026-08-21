@@ -218,6 +218,24 @@ router.post('/public/:trackerCode/panic', async (req, res) => {
   }
 });
 
+// ─── POST /api/people-trackers/panic/resolve-all — Apagar todas las alarmas ──
+router.post('/panic/resolve-all', authenticate, async (req, res) => {
+  try {
+    await PersonTracker.updateMany(
+      {},
+      { $set: { status: 'normal', 'panicAlert.active': false, 'panicAlert.resolvedAt': new Date() } }
+    );
+    await Alert.updateMany(
+      { status: { $ne: 'resolved' } },
+      { $set: { status: 'resolved', resolvedAt: new Date() } }
+    );
+    if (req.io) req.io.emit('all_panics_resolved');
+    res.json({ success: true, message: 'Todas las alarmas de pánico han sido apagadas.' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ─── POST /api/people-trackers/:id/panic — Admin Toggle/Acknowledge Panic ───
 router.post('/:id/panic', authenticate, async (req, res) => {
   try {
