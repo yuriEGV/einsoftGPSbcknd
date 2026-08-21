@@ -181,10 +181,33 @@ async function processTelemetryPoint(point, clientIp, io = null) {
         triggeredAt: pointTime,
         message: '🚨 ¡BOTÓN DE PÁNICO SOS ACTIVADO DESDE CELULAR!',
       };
-      analyzePerson(targetPerson, true).catch(() => {});
-    }
-
     await targetPerson.save();
+
+    // Record SensorData historical trajectory point for person
+    if (hasCoords) {
+      SensorData.create({
+        personTracker: targetPerson._id,
+        deviceIMEI: targetPerson.deviceId || targetPerson.trackerCode,
+        gps: {
+          latitude: lat,
+          longitude: lng,
+          accuracy,
+          altitude,
+          speed,
+          heading,
+        },
+        location: {
+          type: 'Point',
+          coordinates: [lng, lat],
+        },
+        speed,
+        heading,
+        altitude,
+        accuracy,
+        battery: { level: battery, isCharging },
+        timestamp: pointTime,
+      }).catch(() => {});
+    }
 
     if (io) {
       io.emit('person_location_update', {

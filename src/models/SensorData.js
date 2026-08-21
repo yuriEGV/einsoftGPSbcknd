@@ -4,9 +4,19 @@ const sensorDataSchema = new mongoose.Schema({
   vehicle: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'Vehicle',
-    required: true,
+    required: false,
+    index: true,
   },
-  deviceIMEI: String,
+  personTracker: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'PersonTracker',
+    required: false,
+    index: true,
+  },
+  deviceIMEI: {
+    type: String,
+    index: true,
+  },
   timestamp: {
     type: Date,
     default: Date.now,
