@@ -181,6 +181,9 @@ async function processTelemetryPoint(point, clientIp, io = null) {
         triggeredAt: pointTime,
         message: '🚨 ¡BOTÓN DE PÁNICO SOS ACTIVADO DESDE CELULAR!',
       };
+      analyzePerson(targetPerson, true).catch(() => {});
+    }
+
     await targetPerson.save();
 
     // Record SensorData historical trajectory point for person
