@@ -19,12 +19,10 @@ router.get('/', authenticate, async (req, res) => {
     const userId = req.user?.id || req.user?._id;
     let filter = {};
 
-    if (req.user?.role === 'superadmin' || (req.user?.role === 'admin' && !req.user?.company)) {
-      filter = {};
-    } else if (req.user?.company) {
-      filter = { $or: [{ company: req.user.company }, { user: userId }, { company: null }] };
-    } else {
+    if (req.user?.role === 'driver' || req.user?.role === 'mobile_gps_user') {
       filter = { user: userId };
+    } else {
+      filter = {};
     }
 
     const trackers = await PersonTracker.find(filter).sort({ updatedAt: -1 });

@@ -38,9 +38,9 @@ export const requireReadWrite = (req, res, next) => {
 
 // ─── Company scope helper ─────────────────────────────────────────────────────
 function companyFilter(user, extra = {}) {
-  // Si el admin/operador no tiene empresa asignada, es administrador global: ve todo
-  if (!user.company) return extra;
-  return { ...extra, company: user.company };
+  // Superadmin y admin ven todo el inventario
+  if (user.role === 'superadmin' || user.role === 'admin' || !user.company) return extra;
+  return { ...extra, $or: [{ company: user.company }, { company: null }, { user: user.id }] };
 }
 
 // ─── getVehicleScope ──────────────────────────────────────────────────────────
