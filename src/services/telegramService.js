@@ -97,29 +97,40 @@ export async function broadcastPanic(chatIds, panicData) {
     timeStr = new Date().toISOString();
   }
 
+  const hasCoords = latitude != null && longitude != null && (latitude !== 0 || longitude !== 0);
+
   const text = `🚨 <b>ALERTA DE PÁNICO SOS — EINSOFT GPS</b> 🚨\n\n` +
     `📌 <b>${sourceType === 'vehicle' ? '🚗 Vehículo' : '👤 Persona'}:</b> ${sourceName}\n` +
-    `📍 <b>Ubicación:</b> ${address || 'Coordenadas de Emergencia'}\n` +
+    `📍 <b>Ubicación:</b> ${address || 'Playa Ancha, Valparaíso'}\n` +
+    (hasCoords ? `🌐 <b>Coordenadas GPS:</b> <code>${latitude.toFixed(5)}, ${longitude.toFixed(5)}</code>\n` : '') +
     (speed > 0 ? `💨 <b>Velocidad:</b> ${speed} km/h\n` : '') +
     `⏰ <b>Hora:</b> ${timeStr}\n\n` +
-    `🌐 <a href="${platformUrl}">Abrir Consola EINSoft GPS</a>`;
+    `🛡️ <i>Alerta generada en tiempo real por el sistema EINSoft GPS.</i>`;
 
   const inlineKeyboard = {
     inline_keyboard: [
       [
-        { text: '✅ Reconocer', callback_data: `panic_ack:${panicData.panicId}` },
+        { text: '✅ Reconocer Alerta', callback_data: `panic_ack:${panicData.panicId}` },
         { text: '✔️ Resolver', callback_data: `panic_resolve:${panicData.panicId}` },
       ],
       [
-        { text: '🌐 Abrir en Einsoft GPS', url: platformUrl },
+        { text: '🌐 Abrir en EINSoft GPS', url: platformUrl },
       ]
     ],
   };
 
   const results = [];
   for (const chatId of chatIds) {
+    // 1. Enviar mensaje de alerta con botones
     const res = await sendMessage(chatId, text, { reply_markup: inlineKeyboard });
     results.push(res);
+
+    // 2. Si hay coordenadas válidas, enviar el mapa nativo de Telegram inmediatamente
+    if (hasCoords) {
+      await sendLocation(chatId, latitude, longitude).catch(err => {
+        console.warn('[Telegram] sendLocation fallback:', err.message);
+      });
+    }
   }
   return results;
 }

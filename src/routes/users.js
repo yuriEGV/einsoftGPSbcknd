@@ -203,6 +203,41 @@ router.post('/', authenticate, requirePermission('users.create'), async (req, re
 
     const user = new User(userData);
     await user.save();
+
+    // Sincronizar automáticamente con PersonTracker si es usuario móvil o tiene IMEI
+    if (imei || role === 'mobile_gps_user' || role === 'driver') {
+      const existingTracker = await PersonTracker.findOne({
+        $or: [
+          { user: user._id },
+          { name: user.name },
+          phone && phone.trim() ? { phone: phone.trim() } : null,
+        ].filter(Boolean)
+      });
+
+      if (!existingTracker) {
+        let code = 'PER-' + Math.random().toString(36).substring(2, 8).toUpperCase();
+        await PersonTracker.create({
+          name: user.name,
+          phone: user.phone || '',
+          deviceId: imei || '',
+          trackerCode: code,
+          roleDescription: role === 'driver' ? 'Conductor / Chofer' : 'Familiar / Personal',
+          user: user._id,
+          company: user.company || null,
+          hasReportedLocation: false,
+          location: {
+            type: 'Point',
+            coordinates: [0, 0],
+            address: 'Sin señal GPS inicial (Esperando conexión del teléfono)',
+            timestamp: null,
+          }
+        }).catch(() => {});
+      } else if (imei && !existingTracker.deviceId) {
+        existingTracker.deviceId = imei;
+        await existingTracker.save().catch(() => {});
+      }
+    }
+
     res.status(201).json({ message: 'Usuario creado correctamente', userId: user._id });
   } catch (error) {
     if (error.name === 'ValidationError') {

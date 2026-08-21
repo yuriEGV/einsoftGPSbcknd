@@ -357,6 +357,26 @@ router.post('/:id/reset-location', authenticate, async (req, res) => {
   }
 });
 
+// ─── PUT /api/people-trackers/:id — Actualizar datos de persona / IMEI ──────────
+router.put('/:id', authenticate, async (req, res) => {
+  try {
+    const { name, phone, deviceId, roleDescription } = req.body;
+    const tracker = await PersonTracker.findById(req.params.id);
+    if (!tracker) return res.status(404).json({ error: 'Persona no encontrada.' });
+
+    if (name) tracker.name = name.trim();
+    if (phone !== undefined) tracker.phone = phone.trim();
+    if (deviceId !== undefined) tracker.deviceId = deviceId ? deviceId.trim() : '';
+    if (roleDescription) tracker.roleDescription = roleDescription;
+
+    await tracker.save();
+    res.json(tracker);
+  } catch (error) {
+    console.error('Error PUT /people-trackers/:id:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ─── DELETE /api/people-trackers/:id — Remove tracked person ───────────────
 router.delete('/:id', authenticate, async (req, res) => {
   try {
