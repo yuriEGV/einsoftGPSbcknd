@@ -12,12 +12,16 @@ const router = express.Router();
 
 // ─── resolveCity ─────────────────────────────────────────────────────────────
 // Returns a human-readable city name for Chilean coordinates.
-// Accurately distinguishes Cerro Placeres, Playa Ancha, Viña del Mar, etc.
+// Accurately distinguishes Yungay, Cerro Placeres, Playa Ancha, Viña del Mar, etc.
 export function resolveCity(lat, lng) {
   // Valparaíso region
   if (lat < -32.8 && lat > -33.2 && lng < -71.3 && lng > -71.8) {
-    // Cerro Placeres / USM / Portales area (lng between -71.585 and -71.615)
-    if (lng >= -71.615 && lng <= -71.585) {
+    // Sector El Almendral / Yungay / Av. Brasil (-71.605 to -71.620 and lat <= -33.040)
+    if (lng >= -71.620 && lng <= -71.605 && lat <= -33.040) {
+      return { city: 'Valparaíso (Sector Yungay / El Almendral)', address: 'Sector Yungay, Valparaíso' };
+    }
+    // Cerro Placeres / USM / Portales area (lng between -71.585 and -71.605)
+    if (lng >= -71.605 && lng <= -71.585) {
       return { city: 'Valparaíso (Cerro Placeres)', address: 'Cerro Placeres, Valparaíso' };
     }
     // Viña del Mar (east of -71.585)
@@ -28,7 +32,7 @@ export function resolveCity(lat, lng) {
     if (lng < -71.628) {
       return { city: 'Valparaíso (Playa Ancha)', address: 'Playa Ancha, Valparaíso' };
     }
-    // Valparaíso Centro / Almendral (-71.615 to -71.628)
+    // Valparaíso Centro / Puerto
     return { city: 'Valparaíso (Centro)', address: 'Valparaíso, Región de Valparaíso' };
   }
   // Santiago RM
