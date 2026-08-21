@@ -57,6 +57,7 @@ async function processTelemetryPoint(point, clientIp, io = null) {
         { trackerCode: rawId },
         { trackerCode: new RegExp('^' + rawId + '$', 'i') },
         { deviceId: rawId },
+        { aliases: rawId },
         { phone: rawId },
         phoneRegex ? { phone: phoneRegex } : null,
         { name: new RegExp('^' + rawId + '$', 'i') },
