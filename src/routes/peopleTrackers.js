@@ -3,6 +3,7 @@ import crypto from 'crypto';
 import PersonTracker from '../models/PersonTracker.js';
 import DeviceCommand from '../models/DeviceCommand.js';
 import Alert from '../models/Alert.js';
+import SensorData from '../models/SensorData.js';
 import { authenticate } from '../middleware/auth.js';
 import { analyzePerson } from '../services/alertEngine.js';
 
@@ -353,6 +354,50 @@ router.post('/:id/reset-location', authenticate, async (req, res) => {
     }
     res.json({ success: true, message: 'Ubicación antigua limpiada correctamente.', tracker });
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─── GET /api/people-trackers/:id/history — Historial de puntos GPS y viajes ───
+router.get('/:id/history', authenticate, async (req, res) => {
+  try {
+    const tracker = await PersonTracker.findById(req.params.id);
+    if (!tracker) return res.status(404).json({ error: 'Persona no encontrada' });
+
+    const filter = {
+      $or: [
+        { personTracker: tracker._id },
+        tracker.deviceId ? { deviceIMEI: tracker.deviceId } : null,
+      ].filter(Boolean),
+    };
+
+    const points = await SensorData.find(filter)
+      .sort({ timestamp: 1 })
+      .limit(1000)
+      .lean();
+
+    res.json(points);
+  } catch (error) {
+    console.error('Error GET /people-trackers/:id/history:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─── GET /api/people-trackers/history/all — Todos los puntos para mapa multi-ruta ──
+router.get('/history/all', authenticate, async (req, res) => {
+  try {
+    const since = new Date(Date.now() - 24 * 60 * 60 * 1000); // Últimas 24h
+    const points = await SensorData.find({
+      personTracker: { $exists: true, $ne: null },
+      timestamp: { $gte: since },
+    })
+      .sort({ timestamp: 1 })
+      .limit(3000)
+      .lean();
+
+    res.json(points);
+  } catch (error) {
+    console.error('Error GET /people-trackers/history/all:', error);
     res.status(500).json({ error: error.message });
   }
 });
