@@ -19,10 +19,10 @@ router.get('/', authenticate, async (req, res) => {
     const userId = req.user?.id || req.user?._id;
     let filter = {};
 
-    if (req.user?.role === 'admin' && !req.user?.company) {
+    if (req.user?.role === 'superadmin' || (req.user?.role === 'admin' && !req.user?.company)) {
       filter = {};
     } else if (req.user?.company) {
-      filter = { company: req.user.company };
+      filter = { $or: [{ company: req.user.company }, { user: userId }, { company: null }] };
     } else {
       filter = { user: userId };
     }
