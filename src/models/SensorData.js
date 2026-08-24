@@ -57,6 +57,22 @@ const sensorDataSchema = new mongoose.Schema({
     z: Number, // Vertical acceleration (G)
     totalForce: Number, // Total G-force
   },
+  imu: {
+    ax: Number,
+    ay: Number,
+    az: Number,
+    gx: Number,
+    gy: Number,
+    gz: Number,
+    gForce: Number,
+    peakGForce: Number,
+    roll: Number,
+    pitch: Number,
+    eventType: String,
+  },
+  driverScore: Number,
+  transmissionMode: String,
+  sentinelActive: Boolean,
   doorSensor: {
     frontLeftOpen: Boolean,
     frontRightOpen: Boolean,

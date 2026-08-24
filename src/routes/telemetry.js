@@ -28,7 +28,15 @@ async function processTelemetryPoint(point, clientIp, io = null) {
     isCharging = false,
     timestamp = new Date(),
     isPanic = false,
+    imu = null,
+    driverScore = null,
+    transmissionMode = null,
+    sentinelActive = false,
   } = point;
+
+  const isCrash = imu?.eventType === 'CRASH_IMPACT' || (imu?.gForce && imu.gForce >= 2.8);
+  const isTamper = imu?.eventType === 'TAMPER_MOTION';
+  const effectivePanic = isPanic || isCrash || isTamper;
 
   const lat = latitude != null && !isNaN(Number(latitude)) ? Number(latitude) : null;
   const lng = longitude != null && !isNaN(Number(longitude)) ? Number(longitude) : null;
@@ -174,13 +182,19 @@ async function processTelemetryPoint(point, clientIp, io = null) {
     }
     targetPerson.batteryLevel = battery;
     targetPerson.lastSeen = receivedAt;
-    targetPerson.status = isPanic ? 'panic' : 'normal';
+    targetPerson.status = effectivePanic ? 'panic' : 'normal';
 
-    if (isPanic) {
+    if (effectivePanic) {
+      const alertMsg = isCrash
+        ? `💥 ¡POSIBLE IMPACTO / CHOQUE DETECTADO (${imu?.gForce || '2.8+'}G)!`
+        : isTamper
+        ? '🛡️ ¡MOVIMIENTO NO AUTORIZADO DETECTADO EN MODO CENTINELA!'
+        : '🚨 ¡BOTÓN DE PÁNICO SOS ACTIVADO DESDE CELULAR!';
+
       targetPerson.panicAlert = {
         active: true,
         triggeredAt: pointTime,
-        message: '🚨 ¡BOTÓN DE PÁNICO SOS ACTIVADO DESDE CELULAR!',
+        message: alertMsg,
       };
       analyzePerson(targetPerson, true).catch(() => {});
     }
@@ -204,6 +218,22 @@ async function processTelemetryPoint(point, clientIp, io = null) {
           type: 'Point',
           coordinates: [lng, lat],
         },
+        imu: imu ? {
+          ax: imu.ax,
+          ay: imu.ay,
+          az: imu.az,
+          gx: imu.gx,
+          gy: imu.gy,
+          gz: imu.gz,
+          gForce: imu.gForce,
+          peakGForce: imu.peakGForce,
+          roll: imu.roll,
+          pitch: imu.pitch,
+          eventType: imu.eventType,
+        } : null,
+        driverScore,
+        transmissionMode,
+        sentinelActive,
         speed,
         heading,
         altitude,
