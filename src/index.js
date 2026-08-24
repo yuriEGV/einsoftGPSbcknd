@@ -100,8 +100,30 @@ app.get('/api/health', async (req, res) => {
     status: 'UP',
     database: dbStatus,
     timestamp: new Date().toISOString(),
-    version: '1.0.0',
+    version: '2.0.0-eyenode360',
     vercel: process.env.VERCEL === '1'
+  });
+});
+
+// App Version & In-App OTA Update Check
+app.get('/api/app-version', (req, res) => {
+  res.json({
+    latestVersion: '2.0.0',
+    versionCode: 200,
+    releaseName: 'EYE-NODE // TRACKER 360',
+    releaseDate: '2026-08-24',
+    apkUrl: 'https://einsoft-gp-sfrntnd.vercel.app/einsoft-gps.apk',
+    webUrl: 'https://einsoft-gp-sfrntnd.vercel.app/mobile-gps',
+    forceUpdate: false,
+    minSupportedVersion: '1.0.0',
+    features: [
+      '🚀 Nuevo motor táctico EYE-NODE 360 con IMU 6-Ejes',
+      '💥 Detección instantánea de choques e impactos de Fuerza G',
+      '🛡️ Modo Centinela anti-manipulación y anti-robo en reposo',
+      '🧠 Puntuación y comportamiento del conductor con IA en tiempo real',
+      '📦 Caja Negra industrial offline con sincronización automática'
+    ],
+    instructions: 'Descarga el nuevo archivo APK o presiona actualizar para activar la telemetría 360.'
   });
 });
 
