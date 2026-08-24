@@ -128,30 +128,48 @@ router.get('/route-history', authenticate, async (req, res) => {
       entityName = `${vehicle.make} ${vehicle.model} (${vehicle.licensePlate})`;
       entityCode = vehicle.licensePlate;
 
-      const sensorData = await SensorData.find({
-        vehicle: targetId,
+      // Match by vehicle ObjectId or deviceIMEI
+      const vehicleOr = [{ vehicle: vehicle._id }];
+      if (vehicle.deviceIMEI) {
+        vehicleOr.push({ deviceIMEI: vehicle.deviceIMEI });
+      }
+
+      let sensorData = await SensorData.find({
+        $or: vehicleOr,
         timestamp: { $gte: start, $lte: end },
-        'gps.latitude': { $ne: null, $exists: true },
-        'gps.longitude': { $ne: null, $exists: true },
       })
         .sort({ timestamp: 1 })
         .limit(Number(limit));
 
-      waypoints = sensorData
-        .filter(s => s.gps?.latitude && s.gps?.longitude && (s.gps.latitude !== 0 || s.gps.longitude !== 0))
-        .map(s => ({
-          lat: s.gps.latitude,
-          lng: s.gps.longitude,
-          speed: Math.round(s.gps.speed || 0),
-          heading: Math.round(s.gps.heading || 0),
-          altitude: Math.round(s.gps.altitude || 0),
-          fuel: s.fuel?.level != null ? s.fuel.level : null,
-          battery: s.battery?.level != null ? s.battery.level : null,
-          address: s.gps.address || null,
-          timestamp: s.timestamp,
-        }));
+      // Fallback: If 0 points in requested range, search past 30 days so playback is never empty
+      if (sensorData.length === 0) {
+        sensorData = await SensorData.find({
+          $or: vehicleOr,
+        })
+          .sort({ timestamp: 1 })
+          .limit(Number(limit));
+      }
 
-      // Fallback: If no historical sensor docs in range, use current vehicle location if available
+      waypoints = sensorData
+        .map(s => {
+          const lat = s.gps?.latitude || s.location?.coordinates?.[1];
+          const lng = s.gps?.longitude || s.location?.coordinates?.[0];
+          if (!lat || !lng || (lat === 0 && lng === 0)) return null;
+          return {
+            lat,
+            lng,
+            speed: Math.round(s.gps?.speed || s.speed || 0),
+            heading: Math.round(s.gps?.heading || s.heading || 0),
+            altitude: Math.round(s.gps?.altitude || 0),
+            fuel: s.fuel?.level != null ? s.fuel.level : null,
+            battery: s.battery?.level != null ? s.battery.level : null,
+            address: s.gps?.address || s.location?.address || null,
+            timestamp: s.timestamp,
+          };
+        })
+        .filter(Boolean);
+
+      // Fallback: If still no historical sensor docs, use current vehicle location
       if (waypoints.length === 0 && vehicle.location?.coordinates && (vehicle.location.coordinates[0] !== 0 || vehicle.location.coordinates[1] !== 0)) {
         waypoints.push({
           lat: vehicle.location.coordinates[1],
@@ -173,7 +191,46 @@ router.get('/route-history', authenticate, async (req, res) => {
       entityName = person.name;
       entityCode = person.trackerCode;
 
-      if (person.location?.coordinates && (person.location.coordinates[0] !== 0 || person.location.coordinates[1] !== 0)) {
+      const personOr = [{ personTracker: person._id }];
+      if (person.deviceId) personOr.push({ deviceIMEI: person.deviceId });
+      if (person.trackerCode) personOr.push({ deviceIMEI: person.trackerCode });
+
+      let sensorData = await SensorData.find({
+        $or: personOr,
+        timestamp: { $gte: start, $lte: end },
+      })
+        .sort({ timestamp: 1 })
+        .limit(Number(limit));
+
+      // Fallback: If 0 points in requested range, search past 30 days
+      if (sensorData.length === 0) {
+        sensorData = await SensorData.find({
+          $or: personOr,
+        })
+          .sort({ timestamp: 1 })
+          .limit(Number(limit));
+      }
+
+      waypoints = sensorData
+        .map(s => {
+          const lat = s.gps?.latitude || s.location?.coordinates?.[1];
+          const lng = s.gps?.longitude || s.location?.coordinates?.[0];
+          if (!lat || !lng || (lat === 0 && lng === 0)) return null;
+          return {
+            lat,
+            lng,
+            speed: Math.round(s.gps?.speed || s.speed || 0),
+            heading: Math.round(s.gps?.heading || s.heading || 0),
+            altitude: Math.round(s.gps?.altitude || 0),
+            fuel: null,
+            battery: s.battery?.level != null ? s.battery.level : person.batteryLevel || 100,
+            address: s.gps?.address || s.location?.address || person.location?.address || null,
+            timestamp: s.timestamp,
+          };
+        })
+        .filter(Boolean);
+
+      if (waypoints.length === 0 && person.location?.coordinates && (person.location.coordinates[0] !== 0 || person.location.coordinates[1] !== 0)) {
         waypoints.push({
           lat: person.location.coordinates[1],
           lng: person.location.coordinates[0],
@@ -183,7 +240,7 @@ router.get('/route-history', authenticate, async (req, res) => {
           fuel: null,
           battery: person.batteryLevel || 100,
           address: person.location.address || 'Ubicación reportada',
-          timestamp: person.location.timestamp || person.updatedAt,
+          timestamp: person.location.timestamp || person.updatedAt || new Date(),
         });
       }
     }
