@@ -420,6 +420,75 @@ router.get('/history/all', authenticate, async (req, res) => {
   }
 });
 
+// ─── DELETE /api/people-trackers/history/all — Borrar todo el historial de trazas ──
+router.delete('/history/all', authenticate, async (req, res) => {
+  try {
+    await SensorData.deleteMany({ personTracker: { $exists: true, $ne: null } });
+    if (req.io) req.io.emit('person_trails_cleared');
+    res.json({ success: true, message: 'Historial de trazas de todas las personas eliminado.' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─── DELETE /api/people-trackers/:id/history — Borrar historial de una persona ──
+router.delete('/:id/history', authenticate, async (req, res) => {
+  try {
+    const tracker = await PersonTracker.findById(req.params.id);
+    if (!tracker) return res.status(404).json({ error: 'Persona no encontrada.' });
+
+    const filter = {
+      $or: [
+        { personTracker: tracker._id },
+        { deviceIMEI: tracker.deviceId },
+        { deviceIMEI: tracker.trackerCode },
+      ],
+    };
+    await SensorData.deleteMany(filter);
+    if (req.io) req.io.emit('person_trail_cleared', { personId: tracker._id });
+    res.json({ success: true, message: `Historial de trazas de ${tracker.name} eliminado.` });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─── POST /api/people-trackers/:id/reset-location — Resetear posición a 0 y borrar traza ─
+router.post('/:id/reset-location', authenticate, async (req, res) => {
+  try {
+    const tracker = await PersonTracker.findById(req.params.id);
+    if (!tracker) return res.status(404).json({ error: 'Persona no encontrada.' });
+
+    tracker.location = {
+      type: 'Point',
+      coordinates: [0, 0],
+      address: 'Esperando conexión satelital del teléfono...',
+      timestamp: new Date(),
+    };
+    tracker.hasReportedLocation = false;
+    tracker.status = 'normal';
+    if (tracker.panicAlert) tracker.panicAlert.active = false;
+    await tracker.save();
+
+    // Clean historical points
+    await SensorData.deleteMany({
+      $or: [
+        { personTracker: tracker._id },
+        { deviceIMEI: tracker.deviceId },
+        { deviceIMEI: tracker.trackerCode },
+      ],
+    });
+
+    if (req.io) {
+      req.io.emit('person_location_update', tracker);
+      req.io.emit('person_trail_cleared', { personId: tracker._id });
+    }
+
+    res.json({ success: true, message: `Posición de ${tracker.name} reseteada exitosamente.`, tracker });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ─── PUT /api/people-trackers/:id — Actualizar datos de persona / IMEI ──────────
 router.put('/:id', authenticate, async (req, res) => {
   try {

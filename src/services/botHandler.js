@@ -339,24 +339,6 @@ export async function handleCallbackQuery(callbackQuery) {
   }
 }
 
-// ─── Main message dispatcher ─────────────────────────────────────────────────
-export async function handleMessage(message) {
-  const chatId = message.chat.id;
-  const from = message.from;
-  const text = (message.text || '').trim();
-
-  if (!text) return;
-
-  // Authorization
-  const botUser = await getOrCreateBotUser(chatId, from);
-  if (!botUser) {
-    return sendMessage(chatId, '🚫 Tu cuenta de bot está deshabilitada. Contacta al administrador.');
-  }
-
-  // Parse command
-  const [rawCmd, ...args] = text.split(' ');
-  const cmd = rawCmd.toLowerCase().split('@')[0]; // Handle /cmd@botname format
-
 async function handleReporte(chatId, args) {
   const plate = args[0] ? args[0].toUpperCase() : null;
   let vehicle = null;
@@ -410,6 +392,24 @@ async function handleCombustible(chatId, args) {
 
   return sendMessage(chatId, text);
 }
+
+// ─── Main message dispatcher ─────────────────────────────────────────────────
+export async function handleMessage(message) {
+  const chatId = message.chat.id;
+  const from = message.from;
+  const text = (message.text || '').trim();
+
+  if (!text) return;
+
+  // Authorization
+  const botUser = await getOrCreateBotUser(chatId, from);
+  if (!botUser) {
+    return sendMessage(chatId, '🚫 Tu cuenta de bot está deshabilitada. Contacta al administrador.');
+  }
+
+  // Parse command
+  const [rawCmd, ...args] = text.split(' ');
+  const cmd = rawCmd.toLowerCase().split('@')[0]; // Handle /cmd@botname format
 
   try {
     switch (cmd) {
