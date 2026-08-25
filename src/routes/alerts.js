@@ -208,6 +208,84 @@ router.post('/:alertId/acknowledge', authenticate, requirePermission('alerts.ack
   }
 });
 
+// ─── POST /alerts/acknowledge-all — Marcar todas las alertas como atendidas ─
+router.post('/acknowledge-all', authenticate, async (req, res) => {
+  try {
+    const scopeQuery = await getAlertScope(req.user);
+    const result = await Alert.updateMany(
+      { ...scopeQuery, acknowledged: false },
+      { $set: { acknowledged: true, acknowledgedBy: req.user.id, acknowledgedAt: new Date() } }
+    );
+    if (req.io) req.io.emit('alerts_acknowledged');
+    res.json({ message: 'Todas las alertas han sido marcadas como atendidas', modifiedCount: result.modifiedCount });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─── POST /alerts/resolve-panic-all — Desactivar todas las alarmas SOS ──────
+router.post('/resolve-panic-all', authenticate, async (req, res) => {
+  try {
+    const PersonTracker = (await import('../models/PersonTracker.js')).default;
+    const PanicAlert = (await import('../models/PanicAlert.js')).default;
+
+    // 1. Reset all person trackers in panic
+    await PersonTracker.updateMany(
+      {},
+      { $set: { status: 'normal', 'panicAlert.active': false, 'panicAlert.resolvedAt': new Date() } }
+    );
+
+    // 2. Reset all vehicles in alert
+    await Vehicle.updateMany(
+      { status: 'alert' },
+      { $set: { status: 'active' } }
+    );
+
+    // 3. Mark panic alerts as acknowledged and resolved
+    await Alert.updateMany(
+      { type: 'panic' },
+      { $set: { acknowledged: true, acknowledgedBy: req.user.id, acknowledgedAt: new Date() } }
+    );
+
+    await PanicAlert.updateMany(
+      { status: 'ACTIVE' },
+      { $set: { status: 'RESOLVED', resolvedAt: new Date() } }
+    );
+
+    if (req.io) {
+      req.io.emit('all_panics_resolved');
+      req.io.emit('alerts_acknowledged');
+    }
+
+    res.json({ success: true, message: 'Todas las alertas de pánico han sido atendidas y desactivadas.' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─── DELETE /alerts/:alertId — Eliminar una alerta individual ────────────────
+router.delete('/:alertId', authenticate, async (req, res) => {
+  try {
+    const alert = await Alert.findByIdAndDelete(req.params.alertId);
+    if (!alert) return res.status(404).json({ error: 'Alerta no encontrada' });
+    if (req.io) req.io.emit('alert_deleted', { alertId: req.params.alertId });
+    res.json({ message: 'Alerta eliminada correctamente' });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─── DELETE /alerts/clear-all — Eliminar alertas atendidas ────────────────────
+router.delete('/clear-all', authenticate, async (req, res) => {
+  try {
+    const scopeQuery = await getAlertScope(req.user);
+    const result = await Alert.deleteMany({ ...scopeQuery, acknowledged: true });
+    res.json({ message: 'Alertas atendidas eliminadas del historial', deletedCount: result.deletedCount });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ─── GET /alerts/stats/summary — Estadísticas de alertas ─────────────────────
 router.get('/stats/summary', authenticate, requirePermission('alerts.view'), async (req, res) => {
   try {
