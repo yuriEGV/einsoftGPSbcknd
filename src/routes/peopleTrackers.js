@@ -144,15 +144,49 @@ router.post('/', authenticate, async (req, res) => {
 
     const companyId = (req.user?.company && req.user.company !== '') ? req.user.company : null;
 
+    // Buscar si existe un Usuario registrado con este teléfono o nombre para vincularlo
+    let linkedUserId = userId;
+    if (phone && phone.trim()) {
+      const cleanP = phone.replace(/\D/g, '');
+      const matchedUser = await User.findOne({
+        $or: [
+          { phone: phone.trim() },
+          cleanP.length >= 8 ? { phone: new RegExp(cleanP.slice(-8) + '$') } : null,
+          { name: new RegExp('^' + name.trim() + '$', 'i') }
+        ].filter(Boolean)
+      });
+      if (matchedUser) linkedUserId = matchedUser._id;
+    }
+
+    // Auto-generar lista completa de alias (para que el despertar por Ping y la telemetría siempre lo ubiquen)
+    const cleanPhoneDigits = phone ? phone.replace(/\D/g, '') : '';
+    const aliasesList = Array.from(new Set([
+      trackerCode,
+      deviceId ? deviceId.trim() : null,
+      phone ? phone.trim() : null,
+      cleanPhoneDigits.length >= 7 ? cleanPhoneDigits : null,
+      cleanPhoneDigits.length >= 8 ? cleanPhoneDigits.slice(-8) : null,
+      name.trim(),
+      name.trim().toLowerCase(),
+    ].filter(Boolean)));
+
     const newPerson = new PersonTracker({
       name: name.trim(),
       phone: phone ? phone.trim() : '',
-      deviceId: deviceId ? deviceId.trim() : undefined,
+      deviceId: deviceId ? deviceId.trim() : trackerCode,
       roleDescription: roleDescription || 'Familiar / Personal',
       assignedVehicle: assignedVehicle || null,
       trackerCode,
-      user: userId,
+      user: linkedUserId,
       company: companyId,
+      aliases: aliasesList,
+      hasReportedLocation: false,
+      location: {
+        type: 'Point',
+        coordinates: [0, 0],
+        address: 'Sin señal GPS inicial (Esperando conexión del teléfono)',
+        timestamp: null,
+      },
     });
 
     await newPerson.save();
@@ -592,6 +626,22 @@ router.put('/:id', authenticate, async (req, res) => {
     if (phone !== undefined) tracker.phone = phone.trim();
     if (deviceId !== undefined) tracker.deviceId = deviceId ? deviceId.trim() : '';
     if (roleDescription) tracker.roleDescription = roleDescription;
+
+    // Actualizar lista de alias
+    const currentName = tracker.name || '';
+    const currentPhone = tracker.phone || '';
+    const currentDevId = tracker.deviceId || '';
+    const cleanPhoneDigits = currentPhone.replace(/\D/g, '');
+    tracker.aliases = Array.from(new Set([
+      tracker.trackerCode,
+      currentDevId || null,
+      currentPhone || null,
+      cleanPhoneDigits.length >= 7 ? cleanPhoneDigits : null,
+      cleanPhoneDigits.length >= 8 ? cleanPhoneDigits.slice(-8) : null,
+      currentName,
+      currentName.toLowerCase(),
+      ...(tracker.aliases || [])
+    ].filter(Boolean)));
 
     if (assignedVehicle !== undefined) {
       const oldVehicleId = tracker.assignedVehicle;
