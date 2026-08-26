@@ -164,8 +164,6 @@ async function processGPSUpload(deviceIMEI, payload, io) {
     };
   }
 
-  const now = new Date();
-
   // Save raw sensor data record
   const sensorDoc = new SensorData({
     deviceIMEI,
