@@ -100,6 +100,11 @@ const personTrackerSchema = new mongoose.Schema({
     default: '',
     index: true,
   },
+  aliases: {
+    type: [String],
+    default: [],
+    index: true,
+  },
   lastSeen: {
     type: Date,
     default: Date.now,
