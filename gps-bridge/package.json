@@ -1,0 +1,17 @@
+{
+  "name": "einsoft-gps-bridge",
+  "version": "1.0.0",
+  "description": "Professional TCP/UDP bridge for GPS hardware devices → Einsoft GPS backend",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.3.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

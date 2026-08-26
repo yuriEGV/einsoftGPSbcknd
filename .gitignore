@@ -4,3 +4,11 @@ check_db*.js
 restore_admin*.js
 update_placeres.js
 .vercel
+inspect_manuel.js
+# Allow gps-bridge and mobile-app (include source, exclude their node_modules)
+gps-bridge/node_modules
+mobile-app/node_modules
+mobile-app/dist
+mobile-app/android/app/build
+mobile-app/.env
+gps-bridge/.env
