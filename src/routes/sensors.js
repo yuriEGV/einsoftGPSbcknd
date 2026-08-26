@@ -63,20 +63,103 @@ function isSmartTagDevice(deviceModel) {
 }
 
 // ─── processGPSUpload ─────────────────────────────────────────────────────────
-// Core helper: receives an IMEI + GPS payload and updates ONLY that vehicle's location.
-// STRICTLY isolated: each IMEI maps to exactly ONE vehicle.
+// Core helper: receives an IMEI + GPS payload and updates vehicle or person location.
 async function processGPSUpload(deviceIMEI, payload, io) {
   const { gps, obd2, fuel, temperature, accelerometer, doorSensor, battery, alarmSensor } = payload;
 
   if (!deviceIMEI || deviceIMEI === 'XTAG11-DEMO') {
-    return { error: 'IMEI inválido o no registrado. Vincula primero el dispositivo al vehículo.', status: 400 };
+    return { error: 'IMEI inválido o no registrado.', status: 400 };
   }
 
-  // Find the vehicle that owns this EXACT IMEI — strict match
-  const vehicle = await Vehicle.findOne({ deviceIMEI: String(deviceIMEI).trim() });
+  const rawIMEI = String(deviceIMEI).trim();
+  const now = new Date();
+
+  // 1. Find if device belongs to a Vehicle
+  const vehicle = await Vehicle.findOne({ deviceIMEI: rawIMEI });
   if (!vehicle) {
+    // 2. Check if device belongs to a PersonTracker (EYE-NODE APK / mobile)
+    const PersonTracker = (await import('../models/PersonTracker.js')).default;
+    const cleanDigits = rawIMEI.replace(/\D/g, '');
+    const phoneRegex = cleanDigits.length >= 7 ? new RegExp(cleanDigits.slice(-8) + '$') : null;
+
+    const person = await PersonTracker.findOne({
+      $or: [
+        { deviceId: rawIMEI },
+        { trackerCode: rawIMEI },
+        { trackerCode: new RegExp('^' + rawIMEI + '$', 'i') },
+        { phone: rawIMEI },
+        phoneRegex ? { phone: phoneRegex } : null,
+        { name: new RegExp('^' + rawIMEI + '$', 'i') },
+      ].filter(Boolean),
+    });
+
+    if (person) {
+      if (gps && typeof gps.latitude === 'number' && typeof gps.longitude === 'number' && (gps.latitude !== 0 || gps.longitude !== 0)) {
+        const { city, address } = resolveCity(gps.latitude, gps.longitude);
+        person.location = {
+          type: 'Point',
+          coordinates: [gps.longitude, gps.latitude],
+          address: gps.address || address || 'Coordenadas desde Celular',
+          city: gps.city || city || 'Chile',
+          timestamp: now,
+        };
+        person.hasReportedLocation = true;
+      }
+      if (gps?.speed !== undefined) person.speed = Math.max(0, Number(gps.speed));
+      if (battery?.level !== undefined) person.batteryLevel = Math.max(0, Math.min(100, Number(battery.level)));
+      if (gps?.accuracy !== undefined) person.gpsAccuracy = Number(gps.accuracy);
+      if (person.status === 'offline') person.status = 'normal';
+      person.lastSeen = now;
+      await person.save();
+
+      // If person has an assigned vehicle, also update vehicle location
+      let linkedVehicle = null;
+      if (person.assignedVehicle) {
+        linkedVehicle = await Vehicle.findById(person.assignedVehicle);
+      }
+      if (linkedVehicle && person.hasReportedLocation) {
+        linkedVehicle.location = person.location;
+        linkedVehicle.speed = person.speed;
+        linkedVehicle.lastUpdate = now;
+        linkedVehicle.status = 'active';
+        await linkedVehicle.save();
+      }
+
+      // Save raw sensor data record
+      const sensorDoc = new SensorData({
+        deviceIMEI: rawIMEI,
+        personTracker: person._id,
+        vehicle: linkedVehicle ? linkedVehicle._id : undefined,
+        gps, obd2, fuel, temperature, accelerometer, doorSensor, battery, alarmSensor,
+        timestamp: now,
+      });
+      await sensorDoc.save();
+
+      if (io) {
+        io.emit('person_location_update', person);
+        if (linkedVehicle) {
+          io.emit('location_update', {
+            vehicleId: linkedVehicle._id,
+            licensePlate: linkedVehicle.licensePlate,
+            location: linkedVehicle.location,
+            speed: linkedVehicle.speed || 0,
+            status: linkedVehicle.status,
+            lastUpdate: now,
+          });
+        }
+      }
+
+      return {
+        personId: person._id,
+        name: person.name,
+        location: person.location,
+        speed: person.speed,
+        batteryLevel: person.batteryLevel,
+      };
+    }
+
     return {
-      error: `Dispositivo ${deviceIMEI} no está vinculado a ningún vehículo. Vincula el IMEI en la ficha del vehículo.`,
+      error: `Dispositivo ${deviceIMEI} no está vinculado a ningún vehículo ni persona registrada.`,
       status: 404
     };
   }
