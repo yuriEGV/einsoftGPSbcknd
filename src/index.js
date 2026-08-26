@@ -98,6 +98,11 @@ app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ limit: '10mb', extended: true }));
 app.use(requestLogger);
 
+// Root redirect → Frontend app (avoids "Route not found" when browsing the backend URL directly)
+app.get('/', (req, res) => {
+  res.redirect(302, 'https://einsoft-gp-sfrntnd.vercel.app');
+});
+
 // Health Check (always responds 200 OK, even if DB is connecting)
 app.get('/api/health', async (req, res) => {
   const dbStatus = mongoose.connection.readyState === 1 ? 'CONNECTED' : 'CONNECTING_OR_DISCONNECTED';
