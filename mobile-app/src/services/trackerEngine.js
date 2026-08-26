@@ -223,7 +223,10 @@ class EyeNodeEngine {
     setTimeout(() => this.executeTick(), 1000);
     this.scheduleNextTick();
 
-    // 6. Vaciar caja negra si hay conexión
+    // 6. Iniciar Escucha de Comandos Remotos (Wake-up por Ping / Emergencia)
+    this.startCommandPolling();
+
+    // 7. Vaciar caja negra si hay conexión
     if (typeof navigator !== 'undefined' && navigator.onLine && this.blackboxQueue.length > 0) {
       this.flushBlackboxQueue();
     }
@@ -249,6 +252,99 @@ class EyeNodeEngine {
     }
   }
 
+  // ─── COMMAND POLLING & REMOTE WAKE-UP LISTENER ────────────────────────────
+  startCommandPolling() {
+    if (this.commandPollTimer) clearInterval(this.commandPollTimer);
+    
+    // Poll for pending commands every 4 seconds
+    this.commandPollTimer = setInterval(() => {
+      if (this.isRunning && typeof navigator !== 'undefined' && navigator.onLine) {
+        this.pollPendingCommands();
+      }
+    }, 4000);
+
+    // Initial check right away
+    setTimeout(() => this.pollPendingCommands(), 1500);
+  }
+
+  stopCommandPolling() {
+    if (this.commandPollTimer) {
+      clearInterval(this.commandPollTimer);
+      this.commandPollTimer = null;
+    }
+  }
+
+  async pollPendingCommands() {
+    try {
+      const baseUrl = this.config.serverUrl.replace(/\/report\/?$/, '').replace(/\/api\/telemetry\/?$/, '');
+      const deviceId = encodeURIComponent(this.config.deviceId || '');
+      const trackerCode = encodeURIComponent(this.config.trackerCode || '');
+      const url = `${baseUrl}/api/telemetry/commands/pending?deviceId=${deviceId}&trackerCode=${trackerCode}`;
+
+      const res = await fetch(url);
+      if (res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (Array.isArray(data.commands) && data.commands.length > 0) {
+          await this.executeRemoteCommands(data.commands);
+        }
+      }
+    } catch (_) {}
+  }
+
+  async executeRemoteCommands(commands) {
+    for (const cmd of commands) {
+      try {
+        const cmdName = cmd.command || cmd.name;
+        this.logEvent('COMMAND_RECEIVED', `⚡ Comando remoto recibido del servidor: ${cmdName}`, 'warning');
+        
+        if (cmdName === 'LOCATE_NOW' || cmdName === 'FORCE_PING' || cmdName === 'EMERGENCY_WAKEUP') {
+          this.logEvent('REMOTE_WAKEUP', '🚨 DESPERTAR SATELITAL TÁCTICO: Forzando captura GPS y ráfaga continua...', 'critical');
+          
+          // 1. Forzar WakeLock para mantener encendida la antena GPS
+          await this.acquireWakeLock();
+
+          // 2. Forzar lectura satelital inmediata con máxima precisión
+          if (typeof navigator !== 'undefined' && 'geolocation' in navigator) {
+            navigator.geolocation.getCurrentPosition(
+              async (pos) => {
+                this.handlePositionUpdate(pos);
+                // 3. Forzar modo rápido continuo por 5 minutos
+                this.currentMode = TRANSMISSION_MODES.FAST_TRACK;
+                await this.executeTick(true);
+                this.logEvent('LOCATION_TRANSMITTED', `✅ Posición táctica transmitida: [${pos.coords.latitude.toFixed(5)}, ${pos.coords.longitude.toFixed(5)}]`, 'info');
+              },
+              (err) => {
+                this.logEvent('GNSS_RETRY', `Aviso satelital: ${err.message}. Reintentando...`, 'warning');
+              },
+              { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+            );
+          }
+
+          // 4. Cambiar a modo FAST_TRACK
+          this.currentMode = TRANSMISSION_MODES.FAST_TRACK;
+          this.scheduleNextTick();
+        } else if (cmdName === 'EMERGENCY_MODE_ON') {
+          this.setEmergency(true);
+        } else if (cmdName === 'EMERGENCY_MODE_OFF') {
+          this.setEmergency(false);
+        }
+
+        // 5. Enviar confirmación ACK al backend
+        const cmdId = cmd.id || cmd._id;
+        if (cmdId) {
+          const baseUrl = this.config.serverUrl.replace(/\/report\/?$/, '').replace(/\/api\/telemetry\/?$/, '');
+          await fetch(`${baseUrl}/api/telemetry/commands/${cmdId}/ack`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ response: { executed: true, at: new Date() } }),
+          }).catch(() => {});
+        }
+      } catch (err) {
+        console.error('[trackerEngine] Error ejecutando comando remoto:', err);
+      }
+    }
+  }
+
   stop() {
     this.isRunning = false;
     if (this.watchId !== null && typeof navigator !== 'undefined') {
@@ -259,6 +355,7 @@ class EyeNodeEngine {
       clearTimeout(this.timerId);
       this.timerId = null;
     }
+    this.stopCommandPolling();
     this.stopImuSensors();
     this.releaseWakeLock();
     this.notify({ type: 'service_state', isRunning: false });
@@ -594,6 +691,11 @@ class EyeNodeEngine {
       if (res.ok) {
         const data = await res.json().catch(() => ({}));
         this.notify({ type: 'packet_delivered', packet, response: data });
+
+        // Si el servidor devolvió comandos pendientes, ejecutarlos de inmediato
+        if (Array.isArray(data?.commands) && data.commands.length > 0) {
+          await this.executeRemoteCommands(data.commands);
+        }
 
         // Si la caja negra tiene puntos pendientes, vaciarlos en background
         if (this.blackboxQueue.length > 0 && !this.isSyncingBlackbox) {

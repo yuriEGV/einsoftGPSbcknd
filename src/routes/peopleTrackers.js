@@ -386,13 +386,22 @@ router.post('/:id/ping', authenticate, async (req, res) => {
     }
     await tracker.save();
 
-    // 1. Guardar comando PENDING en base de datos para consumo por HTTP polling
-    const targetCode = tracker.deviceId || tracker.trackerCode;
-    if (targetCode) {
+    // 1. Guardar comando PENDING en base de datos para todas las identidades del dispositivo
+    const targetCodes = [
+      tracker.deviceId,
+      tracker.trackerCode,
+      tracker.phone,
+      tracker._id?.toString(),
+      ...(tracker.aliases || [])
+    ].filter(Boolean);
+
+    for (const code of targetCodes) {
       await DeviceCommand.create({
-        deviceId: targetCode,
+        deviceId: String(code),
         command: 'LOCATE_NOW',
-        params: { forced: true, triggerBy: req.user?.name || 'Admin', timestamp: new Date() },
+        targetType: 'person',
+        targetId: tracker._id,
+        payload: { forced: true, triggerBy: req.user?.name || 'Admin', timestamp: new Date(), targetPerson: tracker.name },
         status: 'PENDING',
       }).catch(() => {});
     }
@@ -409,22 +418,24 @@ router.post('/:id/ping', authenticate, async (req, res) => {
       };
 
       req.io.emit('force_gps_locate', wakePayload);
-      if (tracker.deviceId) {
-        req.io.emit(`device_command_${tracker.deviceId}`, { command: 'LOCATE_NOW', ...wakePayload });
-      }
-      if (tracker.trackerCode) {
-        req.io.emit(`device_command_${tracker.trackerCode}`, { command: 'LOCATE_NOW', ...wakePayload });
+      for (const code of targetCodes) {
+        req.io.emit(`device_command_${code}`, { command: 'LOCATE_NOW', ...wakePayload });
       }
 
       try {
         req.io.of('/vehicles').emit('force_gps_locate', wakePayload);
-        if (tracker.deviceId) {
-          req.io.of('/vehicles').emit(`device_command_${tracker.deviceId}`, { command: 'LOCATE_NOW', ...wakePayload });
+        for (const code of targetCodes) {
+          req.io.of('/vehicles').emit(`device_command_${code}`, { command: 'LOCATE_NOW', ...wakePayload });
         }
       } catch (_) {}
     }
 
-    res.json({ success: true, message: `Comando de localización satelital emitido a ${tracker.name}`, tracker });
+    res.json({
+      success: true,
+      message: `Comando de localización satelital emitido a ${tracker.name}. Despertando receptor EYE-NODE...`,
+      tracker,
+      targetCodes,
+    });
   } catch (error) {
     console.error('Error POST /people-trackers/:id/ping:', error);
     res.status(500).json({ error: error.message });
