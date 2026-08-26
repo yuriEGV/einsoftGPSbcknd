@@ -25,6 +25,11 @@ const personTrackerSchema = new mongoose.Schema({
     ref: 'Company',
     default: null,
   },
+  assignedVehicle: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Vehicle',
+    default: null,
+  },
   user: {
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',

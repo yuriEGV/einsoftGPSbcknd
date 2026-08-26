@@ -29,6 +29,10 @@ const vehicleSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User',
   },
+  assignedPerson: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'PersonTracker',
+  },
   assignedDriver: String,
   deviceIMEI: {
     type: String,

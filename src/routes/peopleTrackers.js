@@ -26,7 +26,9 @@ router.get('/', authenticate, async (req, res) => {
       filter = {};
     }
 
-    const trackers = await PersonTracker.find(filter).sort({ updatedAt: -1 });
+    const trackers = await PersonTracker.find(filter)
+      .populate('assignedVehicle', 'licensePlate make model status')
+      .sort({ updatedAt: -1 });
     const processed = trackers.map(t => {
       const obj = t.toObject();
       const coords = obj.location?.coordinates;
@@ -51,10 +53,75 @@ router.get('/', authenticate, async (req, res) => {
   }
 });
 
+// Helper to sync person mobile location to assigned Vehicle
+async function syncVehicleLocation(tracker, io) {
+  try {
+    const Vehicle = (await import('../models/Vehicle.js')).default;
+    const SensorData = (await import('../models/SensorData.js')).default;
+
+    let vehicle = null;
+    if (tracker.assignedVehicle) {
+      const vId = tracker.assignedVehicle._id || tracker.assignedVehicle;
+      vehicle = await Vehicle.findById(vId);
+    }
+    if (!vehicle && tracker.deviceId) {
+      vehicle = await Vehicle.findOne({ deviceIMEI: tracker.deviceId });
+    }
+    if (!vehicle && tracker.trackerCode) {
+      vehicle = await Vehicle.findOne({ deviceIMEI: tracker.trackerCode });
+    }
+
+    if (vehicle && tracker.location?.coordinates && (tracker.location.coordinates[0] !== 0 || tracker.location.coordinates[1] !== 0)) {
+      vehicle.location = {
+        type: 'Point',
+        coordinates: [tracker.location.coordinates[0], tracker.location.coordinates[1]],
+        address: tracker.location.address || 'Ubicación reportada por teléfono celular',
+        timestamp: tracker.location.timestamp || new Date(),
+      };
+      vehicle.speed = tracker.speed || 0;
+      vehicle.lastUpdate = tracker.location.timestamp || new Date();
+      vehicle.status = 'active';
+      await vehicle.save();
+
+      // Also record in SensorData for vehicle route playback
+      const sensorDoc = new SensorData({
+        deviceIMEI: vehicle.deviceIMEI || tracker.deviceId || tracker.trackerCode,
+        vehicle: vehicle._id,
+        personTracker: tracker._id,
+        gps: {
+          latitude: tracker.location.coordinates[1],
+          longitude: tracker.location.coordinates[0],
+          speed: tracker.speed || 0,
+          accuracy: tracker.gpsAccuracy || 0,
+          address: tracker.location.address || null,
+        },
+        battery: { level: tracker.batteryLevel || 100 },
+        timestamp: tracker.location.timestamp || new Date(),
+      });
+      await sensorDoc.save();
+
+      if (io) {
+        io.emit('location_update', {
+          vehicleId: vehicle._id,
+          gps: {
+            coordinates: vehicle.location.coordinates,
+            speed: vehicle.speed,
+            address: vehicle.location.address,
+          },
+          status: vehicle.status,
+          lastUpdate: vehicle.lastUpdate,
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Error in syncVehicleLocation:', err.message);
+  }
+}
+
 // ─── POST /api/people-trackers — Register a person to track ──────────────────
 router.post('/', authenticate, async (req, res) => {
   try {
-    const { name, phone, deviceId, roleDescription } = req.body;
+    const { name, phone, deviceId, roleDescription, assignedVehicle } = req.body;
 
     if (!name || !name.trim()) {
       return res.status(400).json({ error: 'El nombre de la persona es obligatorio.' });
@@ -79,12 +146,19 @@ router.post('/', authenticate, async (req, res) => {
       phone: phone ? phone.trim() : '',
       deviceId: deviceId ? deviceId.trim() : undefined,
       roleDescription: roleDescription || 'Familiar / Personal',
+      assignedVehicle: assignedVehicle || null,
       trackerCode,
       user: userId,
       company: companyId,
     });
 
     await newPerson.save();
+
+    if (assignedVehicle) {
+      const Vehicle = (await import('../models/Vehicle.js')).default;
+      await Vehicle.findByIdAndUpdate(assignedVehicle, { assignedPerson: newPerson._id });
+    }
+
     res.status(201).json(newPerson);
   } catch (error) {
     console.error('Error POST /api/people-trackers:', error);
@@ -95,7 +169,8 @@ router.post('/', authenticate, async (req, res) => {
 // ─── GET /api/people-trackers/public/:trackerCode — Public Mobile Data ────────
 router.get('/public/:trackerCode', async (req, res) => {
   try {
-    const tracker = await PersonTracker.findOne({ trackerCode: req.params.trackerCode });
+    const tracker = await PersonTracker.findOne({ trackerCode: req.params.trackerCode })
+      .populate('assignedVehicle', 'licensePlate make model status');
     if (!tracker) {
       return res.status(404).json({ error: 'Rastreador no encontrado.' });
     }
@@ -135,6 +210,9 @@ router.post('/public/:trackerCode/location', async (req, res) => {
     }
 
     await tracker.save();
+
+    // Auto-sync location to assigned vehicle if any
+    await syncVehicleLocation(tracker, req.io);
 
     if (req.io) {
       req.io.emit('person_location_update', tracker);
@@ -489,10 +567,10 @@ router.post('/:id/reset-location', authenticate, async (req, res) => {
   }
 });
 
-// ─── PUT /api/people-trackers/:id — Actualizar datos de persona / IMEI ──────────
+// ─── PUT /api/people-trackers/:id — Actualizar datos de persona / IMEI / Vehículo ──
 router.put('/:id', authenticate, async (req, res) => {
   try {
-    const { name, phone, deviceId, roleDescription } = req.body;
+    const { name, phone, deviceId, roleDescription, assignedVehicle } = req.body;
     const tracker = await PersonTracker.findById(req.params.id);
     if (!tracker) return res.status(404).json({ error: 'Persona no encontrada.' });
 
@@ -501,8 +579,22 @@ router.put('/:id', authenticate, async (req, res) => {
     if (deviceId !== undefined) tracker.deviceId = deviceId ? deviceId.trim() : '';
     if (roleDescription) tracker.roleDescription = roleDescription;
 
+    if (assignedVehicle !== undefined) {
+      const oldVehicleId = tracker.assignedVehicle;
+      tracker.assignedVehicle = assignedVehicle || null;
+
+      const Vehicle = (await import('../models/Vehicle.js')).default;
+      if (oldVehicleId && String(oldVehicleId) !== String(assignedVehicle)) {
+        await Vehicle.findByIdAndUpdate(oldVehicleId, { $unset: { assignedPerson: 1 } });
+      }
+      if (assignedVehicle) {
+        await Vehicle.findByIdAndUpdate(assignedVehicle, { assignedPerson: tracker._id });
+      }
+    }
+
     await tracker.save();
-    res.json(tracker);
+    const updated = await PersonTracker.findById(tracker._id).populate('assignedVehicle', 'licensePlate make model status');
+    res.json(updated);
   } catch (error) {
     console.error('Error PUT /people-trackers/:id:', error);
     res.status(500).json({ error: error.message });

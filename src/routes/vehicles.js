@@ -20,6 +20,7 @@ router.get('/', authenticate, async (req, res) => {
 
     const vehicles = await Vehicle.find(filter)
       .populate('driver', 'name email phone')
+      .populate('assignedPerson', 'name phone trackerCode deviceId')
       .populate('company', 'name')
       .sort({ lastUpdate: -1 });
 
@@ -44,6 +45,7 @@ router.get('/:id', authenticate, async (req, res) => {
     const filter = getVehicleScope(req.user, req.params.id);
     const vehicle = await Vehicle.findOne(filter)
       .populate('driver', 'name email phone')
+      .populate('assignedPerson', 'name phone trackerCode deviceId')
       .populate('company', 'name')
       .populate('geofences');
 
@@ -82,7 +84,9 @@ router.put('/:id', authenticate, requirePermission('vehicles.create'), async (re
       updateData.company = companyId;
     }
 
-    const vehicle = await Vehicle.findOneAndUpdate(filter, updateData, { new: true });
+    const vehicle = await Vehicle.findOneAndUpdate(filter, updateData, { new: true })
+      .populate('driver', 'name email phone')
+      .populate('assignedPerson', 'name phone trackerCode deviceId');
     if (!vehicle) return res.status(404).json({ error: 'Vehículo no encontrado o sin acceso' });
     res.json(vehicle);
   } catch (error) {
@@ -104,10 +108,10 @@ router.delete('/:id', authenticate, requirePermission('vehicles.create'), async 
   }
 });
 
-// ─── POST /vehicles/:id/link-device — Vincular IMEI/SIM (admin, fleet_manager, independent) ─
+// ─── POST /vehicles/:id/link-device — Vincular IMEI/SIM y Conductor/Persona ─
 router.post('/:id/link-device', authenticate, requirePermission('vehicles.create'), async (req, res) => {
   try {
-    const { deviceIMEI, simCardNumber, deviceModel, driverId } = req.body;
+    const { deviceIMEI, simCardNumber, deviceModel, driverId, personTrackerId } = req.body;
     if (!deviceIMEI) return res.status(400).json({ error: 'deviceIMEI es requerido' });
 
     const filter = getVehicleScope(req.user, req.params.id);
@@ -118,12 +122,20 @@ router.post('/:id/link-device', authenticate, requirePermission('vehicles.create
     await Vehicle.updateMany({ deviceIMEI, _id: { $ne: req.params.id } }, { $unset: { deviceIMEI: 1 } });
 
     const updateData = { deviceIMEI, simCardNumber, deviceModel };
-    if (driverId) updateData.driver = driverId;
+    if (driverId !== undefined) updateData.driver = driverId || null;
+    if (personTrackerId !== undefined) updateData.assignedPerson = personTrackerId || null;
 
     const vehicle = await Vehicle.findByIdAndUpdate(req.params.id, updateData, { new: true })
-      .populate('driver', 'name email');
+      .populate('driver', 'name email phone')
+      .populate('assignedPerson', 'name phone trackerCode deviceId');
 
-    res.json({ message: 'Dispositivo vinculado correctamente', vehicle });
+    // Also link back on PersonTracker if personTrackerId was assigned
+    if (personTrackerId) {
+      const PersonTracker = (await import('../models/PersonTracker.js')).default;
+      await PersonTracker.findByIdAndUpdate(personTrackerId, { assignedVehicle: vehicle._id });
+    }
+
+    res.json({ message: 'Dispositivo y asignación vinculados correctamente', vehicle });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
