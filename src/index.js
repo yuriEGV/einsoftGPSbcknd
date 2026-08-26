@@ -19,11 +19,16 @@ import peopleTrackerRoutes from './routes/peopleTrackers.js';
 import botRoutes from './routes/bot.js';
 import telemetryRoutes from './routes/telemetry.js';
 import mongoose from 'mongoose';
-import './models/Alert.js'; // Ensure Alert model is registered early
+import './models/Company.js';
+import './models/User.js';
+import './models/Vehicle.js';
 import './models/PersonTracker.js';
+import './models/Alert.js';
 import './models/PanicAlert.js';
 import './models/BotUser.js';
 import './models/DeviceCommand.js';
+import './models/Geofence.js';
+import './models/SensorData.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { requestLogger } from './middleware/logger.js';
 

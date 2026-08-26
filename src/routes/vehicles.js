@@ -1,6 +1,10 @@
 import express from 'express';
 import mongoose from 'mongoose';
 import Vehicle from '../models/Vehicle.js';
+import PersonTracker from '../models/PersonTracker.js';
+import User from '../models/User.js';
+import Company from '../models/Company.js';
+import Geofence from '../models/Geofence.js';
 import SensorData from '../models/SensorData.js';
 import { authenticate, requirePermission } from '../middleware/auth.js';
 import { getVehicleScope } from '../middleware/scope.js';
