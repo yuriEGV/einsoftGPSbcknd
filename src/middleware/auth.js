@@ -69,6 +69,10 @@ export const authorize = (...roles) => {
     if (!req.user) {
       return res.status(401).json({ error: 'Unauthorized' });
     }
+    // Superadmin tiene acceso universal a todas las rutas administrativas
+    if (req.user.role === 'superadmin') {
+      return next();
+    }
     if (!roles.includes(req.user.role)) {
       return res.status(403).json({ error: 'Insufficient permissions' });
     }
@@ -85,6 +89,10 @@ export const requirePermission = (permission) => {
   return (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({ error: 'No autenticado' });
+    }
+    // Superadmin tiene acceso universal a todos los permisos
+    if (req.user.role === 'superadmin') {
+      return next();
     }
     const perms = req.user.permissions || getEffectivePermissions(req.user.role, []);
     if (!hasPermission(perms, permission)) {
@@ -106,6 +114,10 @@ export const requireAnyPermission = (...permissions) => {
   return (req, res, next) => {
     if (!req.user) {
       return res.status(401).json({ error: 'No autenticado' });
+    }
+    // Superadmin tiene acceso universal a todos los permisos
+    if (req.user.role === 'superadmin') {
+      return next();
     }
     const perms = req.user.permissions || getEffectivePermissions(req.user.role, []);
     const granted = permissions.some(p => hasPermission(perms, p));
