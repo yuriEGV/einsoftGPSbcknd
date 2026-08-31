@@ -1,5 +1,7 @@
 import express from 'express';
 import http from 'http';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { Server } from 'socket.io';
 import dotenv from 'dotenv';
 import cors from 'cors';
@@ -122,8 +124,8 @@ app.get('/api/app-version', (req, res) => {
     versionCode: 200,
     releaseName: 'EYE-NODE // TRACKER 360',
     releaseDate: '2026-08-24',
-    apkUrl: 'https://einsoft-gp-sfrntnd.vercel.app/einsoft-gps.apk',
-    webUrl: 'https://einsoft-gp-sfrntnd.vercel.app/mobile-gps',
+    apkUrl: 'https://einsoft-gp-sbcknd.vercel.app/eyenode.apk',
+    webUrl: 'https://einsoft-gp-sbcknd.vercel.app/eyenode',
     forceUpdate: false,
     minSupportedVersion: '1.0.0',
     features: [
@@ -136,6 +138,28 @@ app.get('/api/app-version', (req, res) => {
     instructions: 'Descarga el nuevo archivo APK o presiona actualizar para activar la telemetría 360.'
   });
 });
+
+// ─── EYE-NODE Mobile PWA Direct Backend Hosting ──────────────────────────────
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const eyenodePath = path.join(__dirname, '../public/eyenode');
+
+// Service worker special header for scoping
+app.get('/sw.js', (req, res) => {
+  res.setHeader('Service-Worker-Allowed', '/');
+  res.setHeader('Content-Type', 'application/javascript');
+  res.sendFile(path.join(eyenodePath, 'sw.js'));
+});
+
+// Serve assets (js, css, icons)
+app.use('/assets', express.static(path.join(eyenodePath, 'assets')));
+app.use('/eyenode', express.static(eyenodePath));
+
+// Route /eyenode or /tracker to EYE-NODE app index.html
+app.get(['/eyenode', '/eyenode/*', '/tracker', '/tracker/*'], (req, res) => {
+  res.sendFile(path.join(eyenodePath, 'index.html'));
+});
+
 
 // Middleware for DB connection - Ensures DB is ready for all API routes
 const dbMiddleware = async (req, res, next) => {

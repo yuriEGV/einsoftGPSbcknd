@@ -35,6 +35,30 @@
     {
       "source": "/socket.io/(.*)",
       "destination": "/api"
+    },
+    {
+      "source": "/eyenode/(.*)",
+      "destination": "/api"
+    },
+    {
+      "source": "/eyenode",
+      "destination": "/api"
+    },
+    {
+      "source": "/tracker/(.*)",
+      "destination": "/api"
+    },
+    {
+      "source": "/tracker",
+      "destination": "/api"
+    },
+    {
+      "source": "/sw.js",
+      "destination": "/api"
+    },
+    {
+      "source": "/assets/(.*)",
+      "destination": "/api"
     }
   ]
 }
