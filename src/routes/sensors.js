@@ -11,45 +11,92 @@ import { analyzeVehicle } from '../services/alertEngine.js';
 const router = express.Router();
 
 // ─── resolveCity ─────────────────────────────────────────────────────────────
-// Returns a human-readable city name for Chilean coordinates.
-// Accurately distinguishes Yungay, Cerro Placeres, Playa Ancha, Viña del Mar, etc.
-export function resolveCity(lat, lng) {
-  // Valparaíso region
-  if (lat < -32.8 && lat > -33.2 && lng < -71.3 && lng > -71.8) {
-    // Sector El Almendral / Yungay / Av. Brasil (-71.605 to -71.620 and lat <= -33.040)
-    if (lng >= -71.620 && lng <= -71.605 && lat <= -33.040) {
-      return { city: 'Valparaíso (Sector Yungay / El Almendral)', address: 'Sector Yungay, Valparaíso' };
+// Geocodificación inversa real usando OpenStreetMap Nominatim.
+// En caso de error de red, usa bounding boxes de alta precisión como fallback.
+export async function resolveCity(lat, lng) {
+  // Validación rápida: coordenadas dentro de Chile
+  if (!lat || !lng || lat === 0 || lng === 0) {
+    return { city: 'Sin señal', address: 'Sin señal GPS' };
+  }
+  if (lat < -56 || lat > -17 || lng < -82 || lng > -65) {
+    return { city: 'Fuera de Chile', address: `${lat.toFixed(5)}, ${lng.toFixed(5)}` };
+  }
+
+  // Intentar geocodificación inversa real con Nominatim
+  try {
+    const url = `https://nominatim.openstreetmap.org/reverse?lat=${lat}&lon=${lng}&format=json&zoom=16&addressdetails=1&accept-language=es`;
+    const res = await fetch(url, {
+      headers: { 'User-Agent': 'EINSoft-GPS/1.0 (contact@einsoft.cl)' },
+      signal: AbortSignal.timeout(4000),
+    });
+
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.address) {
+        const addr = data.address;
+        // Construir dirección legible
+        const road = addr.road || addr.pedestrian || addr.footway || '';
+        const houseNum = addr.house_number || '';
+        const suburb = addr.suburb || addr.neighbourhood || addr.quarter || '';
+        const city = addr.city || addr.town || addr.village || addr.municipality || 'Chile';
+        const state = addr.state || '';
+
+        const streetPart = road ? `${road}${houseNum ? ' ' + houseNum : ''}` : '';
+        const localPart = suburb ? `${suburb}, ` : '';
+        const cityPart = `${city}${state && state !== city ? ', ' + state : ''}`;
+
+        const address = streetPart
+          ? `${streetPart}, ${localPart}${cityPart}`
+          : `${localPart}${cityPart}`;
+
+        return { city, address: address.trim() || data.display_name?.split(',').slice(0, 3).join(', ') || cityPart };
+      }
     }
-    // Cerro Placeres / USM / Portales area (lng between -71.585 and -71.605)
-    if (lng >= -71.605 && lng <= -71.585) {
-      return { city: 'Valparaíso (Cerro Placeres)', address: 'Cerro Placeres, Valparaíso' };
+  } catch (_) {
+    // Fallback si Nominatim falla (timeout, sin red, etc.)
+  }
+
+  // ── Fallback de alta precisión (sin necesitar API) ─────────────────────────
+  // Valparaíso y región (sectores más comunes del sistema)
+  if (lat >= -33.10 && lat <= -32.85 && lng >= -71.78 && lng <= -71.42) {
+    // Playa Ancha (al oeste del cerro, acceso desde Av. España)
+    if (lng < -71.645 && lat < -33.04) {
+      return { city: 'Valparaíso', address: `Playa Ancha, Valparaíso (${lat.toFixed(4)}, ${lng.toFixed(4)})` };
     }
-    // Viña del Mar (east of -71.585)
-    if (lng > -71.585) {
-      return { city: 'Viña del Mar', address: 'Viña del Mar, Región de Valparaíso' };
+    // Cerro Alegre / Concepción / centro histórico
+    if (lng >= -71.635 && lng <= -71.61 && lat >= -33.05 && lat <= -33.035) {
+      return { city: 'Valparaíso', address: `Centro/Puerto, Valparaíso` };
     }
-    // Playa Ancha (west of -71.628)
-    if (lng < -71.628) {
-      return { city: 'Valparaíso (Playa Ancha)', address: 'Playa Ancha, Valparaíso' };
+    // Cerro Placeres / USM
+    if (lng >= -71.615 && lng <= -71.585) {
+      return { city: 'Valparaíso', address: `Cerro Placeres, Valparaíso` };
     }
-    // Valparaíso Centro / Puerto
-    return { city: 'Valparaíso (Centro)', address: 'Valparaíso, Región de Valparaíso' };
+    // Viña del Mar
+    if (lng > -71.57) {
+      return { city: 'Viña del Mar', address: `Viña del Mar, Región de Valparaíso` };
+    }
+    // Quilpué / Villa Alemana
+    if (lat > -33.05 && lng > -71.45) {
+      return { city: 'Quilpué', address: `Quilpué, Región de Valparaíso` };
+    }
+    return { city: 'Valparaíso', address: `Valparaíso, Chile (${lat.toFixed(4)}, ${lng.toFixed(4)})` };
   }
   // Santiago RM
-  if (lat < -33.2 && lat > -33.75 && lng < -70.35 && lng > -70.85) {
-    return { city: 'Santiago', address: 'Santiago, Región Metropolitana' };
+  if (lat >= -33.75 && lat <= -33.20 && lng >= -70.85 && lng <= -70.35) {
+    return { city: 'Santiago', address: `Santiago, Región Metropolitana` };
   }
   // Concepción
-  if (lat < -36.5 && lat > -37.0 && lng < -72.9 && lng > -73.2) {
-    return { city: 'Concepción', address: 'Concepción, Región del Biobío' };
+  if (lat >= -37.0 && lat <= -36.5 && lng >= -73.2 && lng <= -72.9) {
+    return { city: 'Concepción', address: `Concepción, Región del Biobío` };
   }
   // Antofagasta
-  if (lat < -23.4 && lat > -23.8 && lng < -70.3 && lng > -70.5) {
-    return { city: 'Antofagasta', address: 'Antofagasta, Región de Antofagasta' };
+  if (lat >= -23.8 && lat <= -23.4 && lng >= -70.5 && lng <= -70.3) {
+    return { city: 'Antofagasta', address: `Antofagasta, Región de Antofagasta` };
   }
-  // Generic: use raw coordinates
+  // Genérico: coordenadas exactas
   return { city: 'Chile', address: `${lat.toFixed(5)}, ${lng.toFixed(5)}` };
 }
+
 
 // ─── isSmartTagDevice ─────────────────────────────────────────────────────────
 // Smart Tags / BLE beacons have NO onboard sensors: no fuel, no RPM, no OBD2.

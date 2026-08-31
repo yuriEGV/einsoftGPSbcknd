@@ -29,6 +29,11 @@ const sensorDataSchema = new mongoose.Schema({
     altitude: Number,
     speed: Number,
     heading: Number,
+    address: String,
+  },
+  location: {
+    type: { type: String, default: 'Point' },
+    coordinates: { type: [Number], default: undefined }, // [lng, lat]
   },
   obd2: {
     engineRPM: Number,
@@ -36,39 +41,45 @@ const sensorDataSchema = new mongoose.Schema({
     throttlePosition: Number,
     engineLoad: Number,
     engineCoolantTemp: Number,
-    intakeManioldPressure: Number,
+    intakeManifoldPressure: Number,
     fuelPressure: Number,
     odometer: Number,
-    dtcs: [String], // Diagnostic Trouble Codes
+    dtcs: [String],
   },
   fuel: {
-    level: Number, // 0-100%
-    consumption: Number, // liters/100km
-    estimatedRange: Number, // km remaining
+    level: Number,
+    consumption: Number,
+    estimatedRange: Number,
   },
   temperature: {
     ambient: Number,
     internal: Number,
-    cargo: Number, // For temperature-sensitive cargo
+    cargo: Number,
   },
   accelerometer: {
-    x: Number, // Forward/backward acceleration (G)
-    y: Number, // Left/right acceleration (G)
-    z: Number, // Vertical acceleration (G)
-    totalForce: Number, // Total G-force
+    x: Number,
+    y: Number,
+    z: Number,
+    totalForce: Number,
   },
   imu: {
-    ax: Number,
-    ay: Number,
-    az: Number,
-    gx: Number,
-    gy: Number,
-    gz: Number,
+    ax: Number, ay: Number, az: Number,
+    gx: Number, gy: Number, gz: Number,
     gForce: Number,
     peakGForce: Number,
     roll: Number,
     pitch: Number,
     eventType: String,
+  },
+  // ── Campos unificados para persona y vehículo ─────────────────────────────
+  speed: Number,
+  heading: Number,
+  altitude: Number,
+  accuracy: Number,
+  battery: {
+    level: Number,
+    isCharging: Boolean,
+    voltage: Number,
   },
   driverScore: Number,
   transmissionMode: String,
@@ -81,23 +92,29 @@ const sensorDataSchema = new mongoose.Schema({
     trunkOpen: Boolean,
     hoodOpen: Boolean,
   },
-  battery: {
-    voltage: Number,
-    charging: Boolean,
-    percentage: Number,
-  },
   alarmSensor: {
     triggered: Boolean,
-    type: String, // motion, door, vibration
+    type: String,
   },
-  customData: mongoose.Schema.Types.Mixed, // For extensibility
-
-  // Computed/processed fields
-  rawSignal: String, // Store raw GPS trace if needed
+  customData: mongoose.Schema.Types.Mixed,
+  rawSignal: String,
+}, {
+  // No usar strict mode para compatibilidad con payloads mixtos
+  strict: false,
 });
 
+// ── Índices compuestos de alto rendimiento ───────────────────────────────────
 sensorDataSchema.index({ vehicle: 1, timestamp: -1 });
+sensorDataSchema.index({ personTracker: 1, timestamp: -1 });
 sensorDataSchema.index({ deviceIMEI: 1, timestamp: -1 });
 sensorDataSchema.index({ timestamp: -1 });
+
+// ── Índice geoespacial 2dsphere ───────────────────────────────────────────────
+sensorDataSchema.index({ location: '2dsphere' }, { sparse: true });
+
+// ── TTL: Auto-eliminar puntos de historial después de 90 días ────────────────
+// Esto evita que la DB crezca indefinidamente.
+// Los datos importantes se exportan antes de este límite.
+sensorDataSchema.index({ timestamp: 1 }, { expireAfterSeconds: 90 * 24 * 60 * 60 });
 
 export default mongoose.models.SensorData || mongoose.model('SensorData', sensorDataSchema);

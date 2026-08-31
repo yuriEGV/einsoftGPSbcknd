@@ -528,18 +528,39 @@ router.get('/:id/history', authenticate, async (req, res) => {
 });
 
 // ─── GET /api/people-trackers/history/all — Todos los puntos para mapa multi-ruta ──
+// ?since=168  → últimas N horas (default: 168h = 7 días)
+// ?limit=5000 → máximo puntos retornados
 router.get('/history/all', authenticate, async (req, res) => {
   try {
-    const since = new Date(Date.now() - 24 * 60 * 60 * 1000); // Últimas 24h
+    const sinceHours = parseInt(req.query.since, 10) || 168; // default 7 días
+    const maxLimit = Math.min(parseInt(req.query.limit, 10) || 5000, 10000);
+    const since = new Date(Date.now() - sinceHours * 60 * 60 * 1000);
+
     const points = await SensorData.find({
       personTracker: { $exists: true, $ne: null },
       timestamp: { $gte: since },
+      // Excluir puntos con coordenadas inválidas
+      $or: [
+        { 'gps.latitude': { $exists: true, $ne: 0, $ne: null } },
+        { 'location.coordinates.1': { $exists: true, $ne: 0 } },
+      ],
     })
       .sort({ timestamp: 1 })
-      .limit(3000)
+      .limit(maxLimit)
       .lean();
 
-    res.json(points);
+    // Filtrar en memoria puntos oceánicos / inválidos
+    const validPoints = points.filter(pt => {
+      const lat = pt.gps?.latitude || pt.location?.coordinates?.[1];
+      const lng = pt.gps?.longitude || pt.location?.coordinates?.[0];
+      if (!lat || !lng) return false;
+      if (lat === 0 && lng === 0) return false;
+      // Chile: lat entre -56 y -17, lng entre -82 y -65
+      if (lat < -56 || lat > -17 || lng < -82 || lng > -65) return false;
+      return true;
+    });
+
+    res.json(validPoints);
   } catch (error) {
     console.error('Error GET /people-trackers/history/all:', error);
     res.status(500).json({ error: error.message });
@@ -549,10 +570,80 @@ router.get('/history/all', authenticate, async (req, res) => {
 // ─── DELETE /api/people-trackers/history/all — Borrar todo el historial de trazas ──
 router.delete('/history/all', authenticate, async (req, res) => {
   try {
-    await SensorData.deleteMany({ personTracker: { $exists: true, $ne: null } });
+    const result = await SensorData.deleteMany({ personTracker: { $exists: true, $ne: null } });
     if (req.io) req.io.emit('person_trails_cleared');
-    res.json({ success: true, message: 'Historial de trazas de todas las personas eliminado.' });
+    res.json({ success: true, message: `Historial eliminado: ${result.deletedCount} registros.`, deletedCount: result.deletedCount });
   } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─── POST /api/people-trackers/cleanup-coords — Purgar coordenadas inválidas ──
+// Elimina puntos GPS con (0,0), oceánicos, o fuera de Chile
+router.post('/cleanup-coords', authenticate, async (req, res) => {
+  try {
+    const CHILE_LAT_MIN = -56, CHILE_LAT_MAX = -17;
+    const CHILE_LNG_MIN = -82, CHILE_LNG_MAX = -65;
+
+    // 1. Borrar puntos (0,0)
+    const r1 = await SensorData.deleteMany({
+      personTracker: { $exists: true, $ne: null },
+      $or: [
+        { 'gps.latitude': 0, 'gps.longitude': 0 },
+        { 'location.coordinates': [0, 0] },
+      ],
+    });
+
+    // 2. Borrar puntos fuera de Chile
+    const r2 = await SensorData.deleteMany({
+      personTracker: { $exists: true, $ne: null },
+      $or: [
+        { 'gps.latitude': { $lt: CHILE_LAT_MIN } },
+        { 'gps.latitude': { $gt: CHILE_LAT_MAX } },
+        { 'gps.longitude': { $lt: CHILE_LNG_MIN } },
+        { 'gps.longitude': { $gt: CHILE_LNG_MAX } },
+        { 'location.coordinates.1': { $lt: CHILE_LAT_MIN } },
+        { 'location.coordinates.1': { $gt: CHILE_LAT_MAX } },
+        { 'location.coordinates.0': { $lt: CHILE_LNG_MIN } },
+        { 'location.coordinates.0': { $gt: CHILE_LNG_MAX } },
+      ],
+    });
+
+    // 3. También resetear PersonTrackers atascados en Playa Ancha con coords incorrectas
+    const PersonTracker = (await import('../models/PersonTracker.js')).default;
+    const stuckTrackers = await PersonTracker.find({
+      $or: [
+        { 'location.coordinates.0': { $lt: CHILE_LNG_MIN } },
+        { 'location.coordinates.0': { $gt: CHILE_LNG_MAX } },
+        { 'location.coordinates.1': { $lt: CHILE_LAT_MIN } },
+        { 'location.coordinates.1': { $gt: CHILE_LAT_MAX } },
+        { 'location.coordinates': [0, 0] },
+      ],
+    });
+
+    let resetCount = 0;
+    for (const t of stuckTrackers) {
+      t.location = { type: 'Point', coordinates: [0, 0], address: 'Esperando señal GPS...', timestamp: null };
+      t.hasReportedLocation = false;
+      t.speed = 0;
+      await t.save().catch(() => {});
+      resetCount++;
+    }
+
+    const total = r1.deletedCount + r2.deletedCount;
+    if (req.io) req.io.emit('person_trails_cleared');
+
+    res.json({
+      success: true,
+      message: `Limpieza completada: ${total} puntos GPS inválidos eliminados, ${resetCount} personas reseteadas.`,
+      details: {
+        zeroCoordsDeleted: r1.deletedCount,
+        outOfChileDeleted: r2.deletedCount,
+        trackersReset: resetCount,
+      },
+    });
+  } catch (error) {
+    console.error('Error POST /people-trackers/cleanup-coords:', error);
     res.status(500).json({ error: error.message });
   }
 });

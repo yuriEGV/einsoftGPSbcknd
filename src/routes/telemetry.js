@@ -168,7 +168,7 @@ async function processTelemetryPoint(point, clientIp, io = null) {
       targetPerson.deviceId = deviceId;
     }
     if (hasCoords) {
-      const { address: dynamicAddress } = resolveCity(lat, lng);
+      const { address: dynamicAddress } = await resolveCity(lat, lng);
 
       targetPerson.location = {
         type: 'Point',
