@@ -94,6 +94,26 @@ app.use((req, res, next) => {
 });
 app.use(helmet({
   crossOriginResourcePolicy: false,
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      connectSrc: [
+        "'self'",
+        "https://einsoft-gp-sbcknd.vercel.app",
+        "https://einsoft-gp-sfrntnd.vercel.app",
+        "https://nominatim.openstreetmap.org",
+        "https://*.tile.openstreetmap.org",
+        "https://*.maptiler.com",
+        "wss://*",
+        "ws://*",
+      ],
+      imgSrc: ["'self'", "data:", "blob:", "https://*.tile.openstreetmap.org", "https://*.maptiler.com"],
+      scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
+      workerSrc: ["'self'", "blob:"],
+    },
+  },
 }));
 app.use(compression());
 app.use(express.json({ limit: '10mb' }));

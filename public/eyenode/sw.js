@@ -208,14 +208,14 @@ async function registerPeriodicSync() {
 // ─── IndexedDB helpers en el Service Worker ──────────────────────────────────
 function openIndexedDB() {
   return new Promise((resolve, reject) => {
-    const req = indexedDB.open('eyenode_gps_buffer', 2);
+    const req = indexedDB.open('eyenode_gps_buffer_v3', 1);
     req.onsuccess = (e) => resolve(e.target.result);
     req.onerror = (e) => reject(e.target.error);
     req.onupgradeneeded = (e) => {
       const idb = e.target.result;
       if (!idb.objectStoreNames.contains('gps_points')) {
-        const s = idb.createObjectStore('gps_points', { keyPath: 'localId', autoIncrement: true });
-        s.createIndex('synced', 'synced', { unique: false });
+        const s = idb.createObjectStore('gps_points', { keyPath: 'id', autoIncrement: true });
+        s.createIndex('isSynced', 'isSynced', { unique: false });
         s.createIndex('timestamp', 'timestamp', { unique: false });
       }
       if (!idb.objectStoreNames.contains('meta')) {
@@ -229,9 +229,19 @@ function getUnsyncedPoints(db) {
   return new Promise((resolve) => {
     const tx = db.transaction('gps_points', 'readonly');
     const store = tx.objectStore('gps_points');
-    const idx = store.index('synced');
-    const req = idx.getAll(false);
-    req.onsuccess = () => resolve(req.result || []);
+    const pending = [];
+    const req = store.openCursor();
+    req.onsuccess = (e) => {
+      const cursor = e.target.result;
+      if (cursor) {
+        if (!cursor.value.isSynced || cursor.value.isSynced === 0) {
+          pending.push({ ...cursor.value, id: cursor.key });
+        }
+        cursor.continue();
+      } else {
+        resolve(pending);
+      }
+    };
     req.onerror = () => resolve([]);
   });
 }
@@ -245,7 +255,7 @@ function markPointsAsSynced(db, ids) {
     ids.forEach(id => {
       const r = store.get(id);
       r.onsuccess = () => {
-        if (r.result) { r.result.synced = true; store.put(r.result); }
+        if (r.result) { r.result.isSynced = 1; store.put(r.result); }
         if (--n === 0) resolve();
       };
       r.onerror = () => { if (--n === 0) resolve(); };
