@@ -20,6 +20,7 @@ import companyRoutes from './routes/companies.js';
 import peopleTrackerRoutes from './routes/peopleTrackers.js';
 import botRoutes from './routes/bot.js';
 import telemetryRoutes from './routes/telemetry.js';
+import paymentRoutes from './routes/payments.js';
 import mongoose from 'mongoose';
 import './models/Company.js';
 import './models/User.js';
@@ -31,6 +32,9 @@ import './models/BotUser.js';
 import './models/DeviceCommand.js';
 import './models/Geofence.js';
 import './models/SensorData.js';
+import './models/Plan.js';
+import './models/Subscription.js';
+import './models/Payment.js';
 import { errorHandler } from './middleware/errorHandler.js';
 import { requestLogger } from './middleware/logger.js';
 
@@ -207,6 +211,7 @@ app.use('/api/companies', companyRoutes);
 app.use('/api/people-trackers', peopleTrackerRoutes);
 app.use('/api/bot', botRoutes);
 app.use('/api/telemetry', telemetryRoutes);
+app.use('/api/payments', paymentRoutes);
 
 // 404 Handler
 app.use((req, res) => {
