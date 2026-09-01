@@ -25,12 +25,22 @@ router.get('/', authenticate, async (req, res) => {
 
     if (req.user?.role === 'driver' || req.user?.role === 'mobile_gps_user') {
       filter = { user: userId };
-    } else {
-      filter = {};
+    } else if (req.user?.role !== 'superadmin' && req.user?.company) {
+      filter = {
+        $or: [
+          { company: req.user.company },
+          { user: userId }
+        ]
+      };
+    }
+
+    if (req.query.companyId) {
+      filter.company = req.query.companyId;
     }
 
     const trackers = await PersonTracker.find(filter)
-      .populate('assignedVehicle', 'licensePlate make model status')
+      .populate('assignedVehicle', 'licensePlate make model status company')
+      .populate('company', 'name code')
       .sort({ updatedAt: -1 });
     const processed = trackers.map(t => {
       const obj = t.toObject();
@@ -142,7 +152,7 @@ router.post('/', authenticate, async (req, res) => {
       exists = await PersonTracker.findOne({ trackerCode });
     }
 
-    const companyId = (req.user?.company && req.user.company !== '') ? req.user.company : null;
+    const companyId = req.body.company || ((req.user?.company && req.user.company !== '') ? req.user.company : null);
 
     // Buscar si existe un Usuario registrado con este teléfono o nombre para vincularlo
     let linkedUserId = userId;
@@ -744,11 +754,21 @@ router.put('/:id', authenticate, async (req, res) => {
       }
       if (assignedVehicle) {
         await Vehicle.findByIdAndUpdate(assignedVehicle, { assignedPerson: tracker._id });
+        const vDoc = await Vehicle.findById(assignedVehicle);
+        if (vDoc && vDoc.company && !tracker.company) {
+          tracker.company = vDoc.company;
+        }
       }
     }
 
+    if (req.body.company !== undefined) {
+      tracker.company = req.body.company || null;
+    }
+
     await tracker.save();
-    const updated = await PersonTracker.findById(tracker._id).populate('assignedVehicle', 'licensePlate make model status');
+    const updated = await PersonTracker.findById(tracker._id)
+      .populate('assignedVehicle', 'licensePlate make model status company')
+      .populate('company', 'name code');
     res.json(updated);
   } catch (error) {
     console.error('Error PUT /people-trackers/:id:', error);
