@@ -1,4 +1,4 @@
-﻿/**
+/**
  * mercadoPago.service.js
  * Wrapper del SDK oficial de Mercado Pago v2.
  * Mantiene toda la logica de comunicacion con la API de MP centralizada aqui.
@@ -33,8 +33,8 @@ export async function createPreference(customer, plan, paymentDocId) {
       items: [
         {
           id: plan.code,
-          title: EINSoft GPS — ,
-          description: Suscripcion GPS por  dias. Hasta  dispositivo(s).,
+          title: `EINSoft GPS — ${plan.name}`,
+          description: `Suscripcion GPS por ${plan.durationDays} dias. Hasta ${plan.maxDevices} dispositivo(s).`,
           quantity: 1,
           unit_price: plan.price,
           currency_id: plan.currency || 'CLP',
@@ -45,9 +45,9 @@ export async function createPreference(customer, plan, paymentDocId) {
         email: customer.email || 'cliente@einsoftgps.com',
       },
       back_urls: {
-        success: ${process.env.MERCADOPAGO_SUCCESS_URL}?payment_id=,
-        failure: ${process.env.MERCADOPAGO_FAILURE_URL}?payment_id=,
-        pending: ${process.env.MERCADOPAGO_PENDING_URL}?payment_id=,
+        success: `${process.env.MERCADOPAGO_SUCCESS_URL}?payment_id=${paymentDocId}`,
+        failure: `${process.env.MERCADOPAGO_FAILURE_URL}?payment_id=${paymentDocId}`,
+        pending: `${process.env.MERCADOPAGO_PENDING_URL}?payment_id=${paymentDocId}`,
       },
       auto_return: 'approved',
       external_reference: paymentDocId.toString(),

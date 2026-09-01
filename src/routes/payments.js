@@ -1,4 +1,4 @@
-﻿/**
+/**
  * payments.js — Rutas del sistema de pagos EINSoft GPS.
  *
  * GET  /api/payments/plans                          — Catalogo de planes (publico)
@@ -233,7 +233,7 @@ router.post('/seed-plans', authenticate, requireRole('superadmin'), async (req, 
       results.push(plan.code);
     }
 
-    res.json({ success: true, message: ${results.length} planes cargados, plans: results });
+    res.json({ success: true, message: `${results.length} planes cargados`, plans: results });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
