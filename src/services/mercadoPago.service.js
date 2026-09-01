@@ -5,12 +5,19 @@
  */
 import { MercadoPagoConfig, Preference, Payment as MPPayment } from 'mercadopago';
 
+const DEFAULT_MP_TOKEN = 'APP_USR-688766111264020-122409-679374d6a8091ac45e5120946e13d4da-3089068043';
+const DEFAULT_SUCCESS_URL = 'https://einsoft-gp-sfrntnd.vercel.app/payment-success';
+const DEFAULT_FAILURE_URL = 'https://einsoft-gp-sfrntnd.vercel.app/payment-failed';
+const DEFAULT_PENDING_URL = 'https://einsoft-gp-sfrntnd.vercel.app/payment-pending';
+const DEFAULT_WEBHOOK_URL = 'https://einsoft-gp-sbcknd.vercel.app/api/payments/webhook';
+
 let mpClient = null;
 
 const getMPClient = () => {
   if (!mpClient) {
+    const token = process.env.MERCADOPAGO_ACCESS_TOKEN || DEFAULT_MP_TOKEN;
     mpClient = new MercadoPagoConfig({
-      accessToken: process.env.MERCADOPAGO_ACCESS_TOKEN,
+      accessToken: token,
       options: { timeout: 10000 },
     });
   }
@@ -27,6 +34,11 @@ const getMPClient = () => {
 export async function createPreference(customer, plan, paymentDocId) {
   const client = getMPClient();
   const preferenceClient = new Preference(client);
+
+  const successUrl = process.env.MERCADOPAGO_SUCCESS_URL || DEFAULT_SUCCESS_URL;
+  const failureUrl = process.env.MERCADOPAGO_FAILURE_URL || DEFAULT_FAILURE_URL;
+  const pendingUrl = process.env.MERCADOPAGO_PENDING_URL || DEFAULT_PENDING_URL;
+  const webhookUrl = process.env.MERCADOPAGO_WEBHOOK_URL || DEFAULT_WEBHOOK_URL;
 
   const preference = await preferenceClient.create({
     body: {
@@ -45,13 +57,13 @@ export async function createPreference(customer, plan, paymentDocId) {
         email: customer.email || 'cliente@einsoftgps.com',
       },
       back_urls: {
-        success: `${process.env.MERCADOPAGO_SUCCESS_URL}?payment_id=${paymentDocId}`,
-        failure: `${process.env.MERCADOPAGO_FAILURE_URL}?payment_id=${paymentDocId}`,
-        pending: `${process.env.MERCADOPAGO_PENDING_URL}?payment_id=${paymentDocId}`,
+        success: `${successUrl}?payment_id=${paymentDocId}`,
+        failure: `${failureUrl}?payment_id=${paymentDocId}`,
+        pending: `${pendingUrl}?payment_id=${paymentDocId}`,
       },
       auto_return: 'approved',
       external_reference: paymentDocId.toString(),
-      notification_url: process.env.MERCADOPAGO_WEBHOOK_URL,
+      notification_url: webhookUrl,
       statement_descriptor: 'EINSOFT GPS',
       expires: false,
     },

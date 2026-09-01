@@ -19,10 +19,96 @@ import { checkSubscriptionStatus, runExpiryCheck } from '../services/subscriptio
 
 const router = express.Router();
 
-// ─── Catalogo de planes GPS (publico) ─────────────────────────────────────────
+const DEFAULT_PLANS = [
+  {
+    code: 'GPS-BASICO',
+    name: 'GPS Basico',
+    description: 'Ideal para 1 vehiculo o persona. Monitoreo en tiempo real.',
+    price: 4990,
+    currency: 'CLP',
+    maxDevices: 1,
+    durationDays: 30,
+    targetType: 'both',
+    sortOrder: 1,
+    features: [
+      'Monitoreo en tiempo real',
+      'Historial de recorridos 30 dias',
+      'Alertas basicas',
+      '1 dispositivo GPS',
+    ],
+  },
+  {
+    code: 'GPS-FAMILIAR',
+    name: 'GPS Familiar',
+    description: 'Para hasta 3 personas o vehiculos. Perfecto para familias.',
+    price: 8990,
+    currency: 'CLP',
+    maxDevices: 3,
+    durationDays: 30,
+    targetType: 'user',
+    sortOrder: 2,
+    features: [
+      'Monitoreo en tiempo real',
+      'Historial de recorridos 60 dias',
+      'Alertas de panico SOS',
+      'Geocercas personalizadas',
+      'Hasta 3 dispositivos GPS',
+    ],
+  },
+  {
+    code: 'GPS-EMPRESA',
+    name: 'GPS Empresa',
+    description: 'Gestion de flota corporativa. Hasta 10 vehiculos o personas.',
+    price: 19990,
+    currency: 'CLP',
+    maxDevices: 10,
+    durationDays: 30,
+    targetType: 'company',
+    sortOrder: 3,
+    features: [
+      'Monitoreo en tiempo real',
+      'Historial ilimitado',
+      'Reportes y estadisticas',
+      'Alertas avanzadas y SOS',
+      'Gestion de conductores',
+      'Geocercas ilimitadas',
+      'Hasta 10 dispositivos GPS',
+    ],
+  },
+  {
+    code: 'GPS-EMPRESA-PRO',
+    name: 'GPS Empresa Pro',
+    description: 'Para flotas grandes. Hasta 30 dispositivos y soporte prioritario.',
+    price: 39990,
+    currency: 'CLP',
+    maxDevices: 30,
+    durationDays: 30,
+    targetType: 'company',
+    sortOrder: 4,
+    features: [
+      'Monitoreo en tiempo real',
+      'Historial ilimitado',
+      'Reportes avanzados PDF/Excel',
+      'Alertas personalizadas y SOS',
+      'IA de comportamiento conductores',
+      'Geocercas ilimitadas',
+      'API de integracion',
+      'Soporte prioritario 24/7',
+      'Hasta 30 dispositivos GPS',
+    ],
+  },
+];
+
+// ─── Catalogo de planes GPS (publico con auto-seed) ───────────────────────────
 router.get('/plans', async (req, res) => {
   try {
-    const plans = await Plan.find({ isActive: true }).sort({ sortOrder: 1, price: 1 });
+    let plans = await Plan.find({ isActive: true }).sort({ sortOrder: 1, price: 1 });
+    if (!plans || plans.length === 0) {
+      for (const p of DEFAULT_PLANS) {
+        await Plan.findOneAndUpdate({ code: p.code }, p, { upsert: true, new: true });
+      }
+      plans = await Plan.find({ isActive: true }).sort({ sortOrder: 1, price: 1 });
+    }
     res.json({ success: true, plans });
   } catch (err) {
     res.status(500).json({ error: err.message });
