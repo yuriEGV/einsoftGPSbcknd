@@ -1,4 +1,4 @@
-﻿import mongoose from 'mongoose';
+import mongoose from 'mongoose';
 
 /**
  * Plan — Catalogo de planes GPS de EINSoft.
@@ -16,6 +16,15 @@ const planSchema = new mongoose.Schema({
   description: { type: String, default: '' },
   price: { type: Number, required: true, min: 0 },
   currency: { type: String, default: 'CLP', uppercase: true },
+  period: { type: String, default: 'CLP / mes' },
+  category: {
+    type: String,
+    enum: ['vehicles', 'people', 'all'],
+    default: 'vehicles',
+  },
+  icon: { type: String, default: '📡' },
+  tag: { type: String, default: '' },
+  highlight: { type: Boolean, default: false },
   maxDevices: { type: Number, default: 1, min: 1 },
   durationDays: { type: Number, default: 30, min: 1 },
   features: [String],
@@ -31,5 +40,6 @@ const planSchema = new mongoose.Schema({
 });
 
 planSchema.index({ code: 1, isActive: 1 });
+planSchema.index({ category: 1, sortOrder: 1 });
 
 export default mongoose.models.Plan || mongoose.model('Plan', planSchema);

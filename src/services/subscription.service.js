@@ -1,4 +1,4 @@
-﻿/**
+/**
  * subscription.service.js
  * Logica de negocio para activar, consultar y expirar suscripciones GPS.
  */
@@ -18,7 +18,22 @@ export async function activateGPSService(paymentId) {
   if (!payment) throw new Error('Pago no encontrado: ' + paymentId);
   if (payment.status !== 'approved') throw new Error('El pago no esta aprobado');
 
-  const plan = await Plan.findOne({ code: payment.metadata.planCode });
+  let plan = await Plan.findOne({ code: payment.metadata.planCode });
+  if (!plan) {
+    // Alias fallback
+    const ALIAS_MAP = {
+      'GPS-BASICO': 'PERS-INDIVIDUAL',
+      'GPS-FAMILIAR': 'PERS-FAMILIAR',
+      'GPS-EMPRESA': 'VEH-PYME',
+      'GPS-EMPRESA-PRO': 'VEH-CORP',
+    };
+    const mapped = ALIAS_MAP[payment.metadata.planCode];
+    if (mapped) plan = await Plan.findOne({ code: mapped });
+  }
+  if (!plan) {
+    // Default fallback to first active plan if not found
+    plan = await Plan.findOne({ isActive: true }).sort({ sortOrder: 1 });
+  }
   if (!plan) throw new Error('Plan no encontrado: ' + payment.metadata.planCode);
 
   const now = new Date();
@@ -71,6 +86,12 @@ export async function activateGPSService(paymentId) {
   // Si es empresa, actualizar el plan de suscripcion en Company
   if (payment.customerModel === 'Company') {
     const planMap = {
+      'VEH-FAMILIAR': 'basic',
+      'VEH-PYME': 'pro',
+      'VEH-CORP': 'enterprise',
+      'PERS-INDIVIDUAL': 'basic',
+      'PERS-FAMILIAR': 'basic',
+      'PERS-CUADRILLAS': 'pro',
       'GPS-BASICO': 'basic',
       'GPS-FAMILIAR': 'basic',
       'GPS-EMPRESA': 'pro',

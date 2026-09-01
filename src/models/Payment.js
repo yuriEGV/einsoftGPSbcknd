@@ -1,4 +1,4 @@
-﻿import mongoose from 'mongoose';
+import mongoose from 'mongoose';
 
 /**
  * Payment — Registro individual de cada transaccion de pago.
@@ -39,9 +39,11 @@ const paymentSchema = new mongoose.Schema({
     enum: ['mercadopago'],
   },
 
-  // IDs de Mercado Pago
+  // IDs y Enlaces de Mercado Pago
   preferenceId: { type: String, default: null },  // ID de la preferencia creada
   mpPaymentId: { type: String, default: null },   // ID del pago real confirmado por MP
+  checkoutUrl: { type: String, default: null },   // URL directa para pagar / retomar pago
+  sandboxUrl: { type: String, default: null },
 
   // Monto
   amount: { type: Number, required: true, min: 0 },

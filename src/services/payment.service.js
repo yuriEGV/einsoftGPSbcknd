@@ -1,4 +1,4 @@
-﻿/**
+/**
  * payment.service.js
  * Orquesta la creacion de pagos y el procesamiento de webhooks de Mercado Pago.
  */
@@ -9,16 +9,30 @@ import Company from '../models/Company.js';
 import { createPreference, getMPPaymentById } from './mercadoPago.service.js';
 import { activateGPSService } from './subscription.service.js';
 
+const ALIAS_MAP = {
+  'GPS-BASICO': 'PERS-INDIVIDUAL',
+  'GPS-FAMILIAR': 'PERS-FAMILIAR',
+  'GPS-EMPRESA': 'VEH-PYME',
+  'GPS-EMPRESA-PRO': 'VEH-CORP',
+  'PLAN-PARTICULAR': 'VEH-FAMILIAR',
+  'PLAN-PYME': 'VEH-PYME',
+  'PLAN-CORPORATIVO': 'VEH-CORP',
+};
+
 /**
  * Crea una preferencia de pago en Mercado Pago y guarda el registro Payment(pending).
  * @param {string} customerId     - ID del User o Company
  * @param {string} customerModel  - 'User' | 'Company'
- * @param {string} planCode       - e.g. 'GPS-BASICO'
+ * @param {string} planCode       - e.g. 'VEH-FAMILIAR' o 'GPS-BASICO'
  * @returns {{ paymentId, checkoutUrl, sandboxUrl, planName, amount }}
  */
 export async function createPayment(customerId, customerModel, planCode) {
-  // 1. Buscar plan
-  const plan = await Plan.findOne({ code: planCode.toUpperCase(), isActive: true });
+  // 1. Buscar plan (directo o por alias)
+  const normalizedCode = planCode.toUpperCase();
+  let plan = await Plan.findOne({ code: normalizedCode, isActive: true });
+  if (!plan && ALIAS_MAP[normalizedCode]) {
+    plan = await Plan.findOne({ code: ALIAS_MAP[normalizedCode], isActive: true });
+  }
   if (!plan) throw new Error('Plan no encontrado o inactivo: ' + planCode);
 
   // 2. Resolver cliente (nombre + email para MP)
@@ -50,8 +64,10 @@ export async function createPayment(customerId, customerModel, planCode) {
   // 4. Crear preferencia en Mercado Pago
   const { preferenceId, checkoutUrl, sandboxUrl } = await createPreference(customer, plan, paymentDoc._id);
 
-  // 5. Guardar preferenceId en el registro de pago
+  // 5. Guardar preferenceId y URLs en el registro de pago
   paymentDoc.preferenceId = preferenceId;
+  paymentDoc.checkoutUrl = checkoutUrl;
+  paymentDoc.sandboxUrl = sandboxUrl;
   await paymentDoc.save();
 
   return {
@@ -62,6 +78,106 @@ export async function createPayment(customerId, customerModel, planCode) {
     planName: plan.name,
     amount: plan.price,
     currency: plan.currency,
+  };
+}
+
+/**
+ * Reintenta / retoma un pago pendiente existente generando una preferencia MP fresca si es necesario.
+ * @param {string} paymentId 
+ */
+export async function retryPayment(paymentId) {
+  const payment = await Payment.findById(paymentId);
+  if (!payment) throw new Error('Pago no encontrado');
+  if (payment.status === 'approved') throw new Error('Este pago ya fue aprobado');
+
+  // Buscar plan asociado
+  const normalizedCode = (payment.metadata?.planCode || '').toUpperCase();
+  let plan = await Plan.findOne({ code: normalizedCode });
+  if (!plan && ALIAS_MAP[normalizedCode]) {
+    plan = await Plan.findOne({ code: ALIAS_MAP[normalizedCode] });
+  }
+  if (!plan) {
+    plan = await Plan.findOne({ isActive: true }).sort({ sortOrder: 1 });
+  }
+  if (!plan) throw new Error('Plan no disponible para este pago');
+
+  // Resolver cliente
+  let customer = { id: payment.customerId, name: 'Cliente EINSoft', email: 'cliente@einsoftgps.com' };
+  if (payment.customerModel === 'Company') {
+    const company = await Company.findById(payment.customerId);
+    if (company) customer = { id: company._id, name: company.name, email: company.email || 'empresa@einsoftgps.com' };
+  } else {
+    const user = await User.findById(payment.customerId);
+    if (user) customer = { id: user._id, name: user.name, email: user.email };
+  }
+
+  // Generar preferencia fresca en MP
+  const { preferenceId, checkoutUrl, sandboxUrl } = await createPreference(customer, plan, payment._id);
+  payment.preferenceId = preferenceId;
+  payment.checkoutUrl = checkoutUrl;
+  payment.sandboxUrl = sandboxUrl;
+  payment.status = 'pending';
+  payment.updatedAt = new Date();
+  await payment.save();
+
+  return {
+    paymentId: payment._id,
+    preferenceId,
+    checkoutUrl,
+    sandboxUrl,
+    planName: plan.name,
+    amount: payment.amount,
+    currency: payment.currency,
+  };
+}
+
+/**
+ * Modifica manualmente el estado de un pago (Superadmin / Admin).
+ * Si se cambia a 'approved', activa automáticamente el servicio GPS.
+ * @param {string} paymentId
+ * @param {string} newStatus - 'approved' | 'pending' | 'rejected' | 'cancelled' | 'refunded'
+ * @param {Object} adminUser
+ */
+export async function updatePaymentStatus(paymentId, newStatus, adminUser) {
+  const payment = await Payment.findById(paymentId);
+  if (!payment) throw new Error('Pago no encontrado');
+
+  const validStatuses = ['approved', 'pending', 'rejected', 'cancelled', 'refunded', 'charged_back'];
+  if (!validStatuses.includes(newStatus)) {
+    throw new Error('Estado inválido. Válidos: ' + validStatuses.join(', '));
+  }
+
+  const now = new Date();
+  const oldStatus = payment.status;
+  payment.status = newStatus;
+  payment.updatedAt = now;
+
+  if (newStatus === 'approved') {
+    payment.approvedAt = payment.approvedAt || now;
+  } else if (['rejected', 'cancelled', 'refunded', 'charged_back'].includes(newStatus)) {
+    payment.rejectedAt = now;
+  }
+
+  payment.metadata = {
+    ...payment.metadata,
+    manualOverride: true,
+    modifiedBy: adminUser?.email || 'admin',
+    modifiedAt: now.toISOString(),
+    previousStatus: oldStatus,
+  };
+
+  await payment.save();
+
+  // Si fue marcado como approved, activar el servicio GPS
+  let subscription = null;
+  if (newStatus === 'approved') {
+    subscription = await activateGPSService(payment._id.toString());
+  }
+
+  return {
+    payment,
+    subscription,
+    message: `Estado actualizado de ${oldStatus} a ${newStatus}`,
   };
 }
 
