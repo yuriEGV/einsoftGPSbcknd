@@ -105,7 +105,7 @@ router.post('/:id/reset-password', authenticate, requirePermission('users.update
 // ─── PUT /users/:id — Editar usuario ─────────────────────────────────────────
 router.put('/:id', authenticate, requirePermission('users.update'), async (req, res) => {
   try {
-    const { name, email, role, status, companyId, phone, imei } = req.body;
+    const { name, email, role, status, companyId, company, phone, imei } = req.body;
 
     const scope = getUserScope(req.user);
     const filter = { ...scope, _id: req.params.id };
@@ -114,24 +114,35 @@ router.put('/:id', authenticate, requirePermission('users.update'), async (req, 
 
     const updateFields = { name, email, role, status, phone, imei, updatedAt: new Date() };
 
-    // Solo superadmin puede mover un usuario a otra empresa
-    if (req.user.role === 'superadmin' && companyId !== undefined) {
-      updateFields.company = companyId || undefined;
+    // Asignar o cambiar de empresa (o null para plan personal/familiar)
+    const targetComp = companyId !== undefined ? companyId : company;
+    if (targetComp !== undefined) {
+      if (targetComp === '' || targetComp === null || targetComp === 'none') {
+        updateFields.company = null;
+      } else {
+        updateFields.company = targetComp;
+      }
     }
 
     // admin no puede promover a superadmin
-    if (req.user.role === 'admin') {
-      if (role === 'superadmin') return res.status(403).json({ error: 'No puedes asignar rol de superadministrador' });
-      delete updateFields.company;
+    if (req.user.role === 'admin' && role === 'superadmin') {
+      return res.status(403).json({ error: 'No puedes asignar rol de superadministrador' });
     }
 
-    const updatedUser = await User.findByIdAndUpdate(req.params.id, updateFields, { new: true }).select('-password');
+    const updatedUser = await User.findByIdAndUpdate(req.params.id, updateFields, { new: true })
+      .populate('company', 'name')
+      .select('-password');
 
-    // Sincronizar IMEI con PersonTracker si existe
-    if (imei && updatedUser) {
+    // Sincronizar empresa e IMEI con PersonTracker si existe
+    if (updatedUser) {
+      const trackerUpdate = { lastSeen: new Date() };
+      if (imei) trackerUpdate.deviceId = imei;
+      if (targetComp !== undefined) {
+        trackerUpdate.company = updateFields.company || null;
+      }
       await PersonTracker.updateMany(
         { $or: [{ user: updatedUser._id }, { name: updatedUser.name }, { phone: updatedUser.phone }] },
-        { $set: { deviceId: imei, lastSeen: new Date() } }
+        { $set: trackerUpdate }
       ).catch(() => {});
     }
 
