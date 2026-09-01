@@ -65,6 +65,9 @@ export async function createPreference(customer, plan, paymentDocId) {
       external_reference: paymentDocId.toString(),
       notification_url: webhookUrl,
       statement_descriptor: 'EINSOFT GPS',
+      payment_methods: {
+        installments: 12,
+      },
       expires: false,
     },
   });
