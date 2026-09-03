@@ -551,10 +551,14 @@ router.get('/:id/history', authenticate, async (req, res) => {
     // Fallback: Si no hay puntos en el rango 'since', buscar los últimos N registros históricos
     if (points.length === 0) {
       points = await SensorData.find({
-        $or: orConditions,
-        $or: [
-          { 'gps.latitude': { $exists: true, $ne: 0, $ne: null } },
-          { 'location.coordinates.1': { $exists: true, $ne: 0 } },
+        $and: [
+          { $or: orConditions },
+          {
+            $or: [
+              { 'gps.latitude': { $exists: true, $ne: 0, $ne: null } },
+              { 'location.coordinates.1': { $exists: true, $ne: 0 } },
+            ],
+          },
         ],
       })
         .sort({ timestamp: -1 })
@@ -598,53 +602,68 @@ router.get('/:id/history', authenticate, async (req, res) => {
 });
 
 // ─── GET /api/people-trackers/history/all — Todos los puntos para mapa multi-ruta ──
-// ?since=168  → últimas N horas (default: 168h = 7 días)
-// ?limit=5000 → máximo puntos retornados
+// ?since=168      → últimas N horas (default: 168h = 7 días)
+// ?perPersonLimit → máximo puntos retornados POR PERSONA (default: 500, evita que una sola persona monopolice el buffer)
 router.get('/history/all', authenticate, async (req, res) => {
   try {
-    const sinceHours = parseInt(req.query.since, 10) || 168; // default 7 días
-    const maxLimit = Math.min(parseInt(req.query.limit, 10) || 5000, 10000);
+    const sinceHours = parseInt(req.query.since, 10) || 168;
+    // Límite ESTRICTO por persona — nunca una sola persona puede consumir más que esto
+    const perPersonLimit = Math.min(parseInt(req.query.perPersonLimit, 10) || 500, 2000);
     const since = new Date(Date.now() - sinceHours * 60 * 60 * 1000);
 
-    const points = await SensorData.find({
-      personTracker: { $exists: true, $ne: null },
-      timestamp: { $gte: since },
-      // Excluir puntos con coordenadas inválidas
-      $or: [
-        { 'gps.latitude': { $exists: true, $ne: 0, $ne: null } },
-        { 'location.coordinates.1': { $exists: true, $ne: 0 } },
-      ],
-    })
-      .sort({ timestamp: 1 })
-      .limit(maxLimit)
-      .lean();
-
-    // Filtrar en memoria puntos oceánicos y comprimir paradas estacionarias por persona
-    const byPersonLast = new Map();
-    const validPoints = [];
-
-    for (const pt of points) {
-      const lat = pt.gps?.latitude || pt.location?.coordinates?.[1];
-      const lng = pt.gps?.longitude || pt.location?.coordinates?.[0];
-      if (!lat || !lng || (lat === 0 && lng === 0)) continue;
-      // Chile: lat entre -56 y -17, lng entre -82 y -65
-      if (lat < -56 || lat > -17 || lng < -82 || lng > -65) continue;
-
-      const pId = String(pt.personTracker);
-      const last = byPersonLast.get(pId);
-      if (last) {
-        const dLat = Math.abs(lat - last.lat);
-        const dLng = Math.abs(lng - last.lng);
-        const isStatic = (pt.gps?.speed || 0) === 0 && last.speed === 0;
-        // Omitir puntos estacionarios idénticos intermedios
-        if (isStatic && dLat < 0.00015 && dLng < 0.00015) {
-          continue;
-        }
-      }
-
-      byPersonLast.set(pId, { lat, lng, speed: pt.gps?.speed || 0 });
-      validPoints.push(pt);
+    // Obtener todos los trackers de la empresa del usuario autenticado
+    const userId = req.user?.id || req.user?._id;
+    let trackerFilter = {};
+    if (req.user?.role === 'driver' || req.user?.role === 'mobile_gps_user') {
+      trackerFilter = { user: userId };
+    } else if (req.user?.role !== 'superadmin' && req.user?.company) {
+      trackerFilter = { $or: [{ company: req.user.company }, { user: userId }] };
     }
+    const allTrackers = await PersonTracker.find(trackerFilter, '_id').lean();
+    const trackerIds = allTrackers.map((t) => t._id);
+
+    if (trackerIds.length === 0) return res.json([]);
+
+    // Obtener hasta perPersonLimit puntos por persona de forma INDEPENDIENTE
+    // Esto garantiza que ninguna persona monopoliza el buffer global
+    const perPersonPromises = trackerIds.map(async (trackerId) => {
+      const pts = await SensorData.find({
+        personTracker: trackerId,
+        timestamp: { $gte: since },
+        $or: [
+          { 'gps.latitude': { $exists: true, $ne: 0, $ne: null } },
+          { 'location.coordinates.1': { $exists: true, $ne: 0 } },
+        ],
+      })
+        .sort({ timestamp: 1 })
+        .limit(perPersonLimit)
+        .lean();
+
+      // Comprimir paradas estacionarias idénticas consecutivas
+      const compressed = [];
+      for (const pt of pts) {
+        const lat = pt.gps?.latitude || pt.location?.coordinates?.[1];
+        const lng = pt.gps?.longitude || pt.location?.coordinates?.[0];
+        if (!lat || !lng || (lat === 0 && lng === 0)) continue;
+        // Chile bounds
+        if (lat < -56 || lat > -17 || lng < -82 || lng > -65) continue;
+
+        if (compressed.length > 0) {
+          const last = compressed[compressed.length - 1];
+          const lastLat = last.gps?.latitude || last.location?.coordinates?.[1];
+          const lastLng = last.gps?.longitude || last.location?.coordinates?.[0];
+          const dLat = Math.abs(lat - lastLat);
+          const dLng = Math.abs(lng - lastLng);
+          const isStatic = (pt.gps?.speed || 0) === 0 && (last.gps?.speed || 0) === 0;
+          if (isStatic && dLat < 0.00015 && dLng < 0.00015) continue;
+        }
+        compressed.push(pt);
+      }
+      return compressed;
+    });
+
+    const perPersonArrays = await Promise.all(perPersonPromises);
+    const validPoints = perPersonArrays.flat();
 
     res.json(validPoints);
   } catch (error) {
