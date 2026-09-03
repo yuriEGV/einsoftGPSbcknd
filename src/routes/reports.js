@@ -141,13 +141,14 @@ router.get('/route-history', authenticate, async (req, res) => {
         .sort({ timestamp: 1 })
         .limit(Number(limit));
 
-      // Fallback: If 0 points in requested range, search past 30 days so playback is never empty
+      // Fallback: If 0 points in requested range, search most recent past points
       if (sensorData.length === 0) {
         sensorData = await SensorData.find({
           $or: vehicleOr,
         })
-          .sort({ timestamp: 1 })
+          .sort({ timestamp: -1 })
           .limit(Number(limit));
+        sensorData.reverse();
       }
 
       waypoints = sensorData
@@ -155,6 +156,7 @@ router.get('/route-history', authenticate, async (req, res) => {
           const lat = s.gps?.latitude || s.location?.coordinates?.[1];
           const lng = s.gps?.longitude || s.location?.coordinates?.[0];
           if (!lat || !lng || (lat === 0 && lng === 0)) return null;
+          if (lat < -56 || lat > -17 || lng < -82 || lng > -65) return null;
           return {
             lat,
             lng,
@@ -202,13 +204,14 @@ router.get('/route-history', authenticate, async (req, res) => {
         .sort({ timestamp: 1 })
         .limit(Number(limit));
 
-      // Fallback: If 0 points in requested range, search past 30 days
+      // Fallback: If 0 points in requested range, search most recent past points
       if (sensorData.length === 0) {
         sensorData = await SensorData.find({
           $or: personOr,
         })
-          .sort({ timestamp: 1 })
+          .sort({ timestamp: -1 })
           .limit(Number(limit));
+        sensorData.reverse();
       }
 
       waypoints = sensorData
@@ -216,6 +219,7 @@ router.get('/route-history', authenticate, async (req, res) => {
           const lat = s.gps?.latitude || s.location?.coordinates?.[1];
           const lng = s.gps?.longitude || s.location?.coordinates?.[0];
           if (!lat || !lng || (lat === 0 && lng === 0)) return null;
+          if (lat < -56 || lat > -17 || lng < -82 || lng > -65) return null;
           return {
             lat,
             lng,
@@ -245,13 +249,87 @@ router.get('/route-history', authenticate, async (req, res) => {
       }
     }
 
+    // Comprimir puntos idénticos detenidos para aligerar la ruta
+    const compressedWaypoints = [];
+    for (let i = 0; i < waypoints.length; i++) {
+      const w = waypoints[i];
+      if (compressedWaypoints.length > 0) {
+        const last = compressedWaypoints[compressedWaypoints.length - 1];
+        const dLat = Math.abs(w.lat - last.lat);
+        const dLng = Math.abs(w.lng - last.lng);
+        const isStatic = w.speed === 0 && last.speed === 0;
+        if (isStatic && dLat < 0.00015 && dLng < 0.00015 && i < waypoints.length - 1) {
+          continue;
+        }
+      }
+      compressedWaypoints.push(w);
+    }
+
+    const finalWaypoints = compressedWaypoints.length > 0 ? compressedWaypoints : waypoints;
+
+    // Segmentar waypoints en viajes/tramos independientes (evitar unir días distintos o saltos marinos)
+    const trips = [];
+    if (finalWaypoints.length > 0) {
+      let curTrip = [finalWaypoints[0]];
+      for (let i = 1; i < finalWaypoints.length; i++) {
+        const prev = finalWaypoints[i - 1];
+        const curr = finalWaypoints[i];
+
+        const tPrev = new Date(prev.timestamp).getTime();
+        const tCurr = new Date(curr.timestamp).getTime();
+        const gapMin = (tCurr - tPrev) / 60000;
+
+        const dLat = (curr.lat - prev.lat) * 111320;
+        const dLng = (curr.lng - prev.lng) * 111320 * Math.cos((curr.lat * Math.PI) / 180);
+        const distM = Math.hypot(dLat, dLng);
+
+        let isBreak = false;
+        if (gapMin > 20) isBreak = true;
+        else if (distM > 3500) isBreak = true;
+        // Salto directo a través de la bahía de Valparaíso
+        else if (
+          ((prev.lng < -71.61 && curr.lng > -71.59) || (prev.lng > -71.59 && curr.lng < -71.61)) &&
+          distM > 2000 &&
+          gapMin > 10
+        ) {
+          isBreak = true;
+        }
+
+        if (isBreak) {
+          trips.push({
+            id: trips.length + 1,
+            pointCount: curTrip.length,
+            startTime: curTrip[0].timestamp,
+            endTime: curTrip[curTrip.length - 1].timestamp,
+            startPoint: curTrip[0],
+            endPoint: curTrip[curTrip.length - 1],
+            waypoints: curTrip,
+          });
+          curTrip = [curr];
+        } else {
+          curTrip.push(curr);
+        }
+      }
+      if (curTrip.length > 0) {
+        trips.push({
+          id: trips.length + 1,
+          pointCount: curTrip.length,
+          startTime: curTrip[0].timestamp,
+          endTime: curTrip[curTrip.length - 1].timestamp,
+          startPoint: curTrip[0],
+          endPoint: curTrip[curTrip.length - 1],
+          waypoints: curTrip,
+        });
+      }
+    }
+
     // Compute Metrics & Stops
-    const speeds = waypoints.map(w => w.speed);
+    const speeds = finalWaypoints.map(w => w.speed);
     const avgSpeed = speeds.length > 0 ? Math.round(speeds.reduce((a, b) => a + b, 0) / speeds.length) : 0;
     const maxSpeed = speeds.length > 0 ? Math.max(...speeds) : 0;
 
     // Detect Stops (waypoints where speed === 0)
-    const stops = waypoints.filter(w => w.speed === 0).map((w, idx) => ({
+    const stops = finalWaypoints.filter(w => w.speed === 0).map((w, idx) => ({
       index: idx,
       lat: w.lat,
       lng: w.lng,
@@ -265,13 +343,15 @@ router.get('/route-history', authenticate, async (req, res) => {
       entityName,
       entityCode,
       period: { start, end },
-      totalPoints: waypoints.length,
+      totalPoints: finalWaypoints.length,
+      totalTrips: trips.length,
+      trips,
       metrics: {
         avgSpeed,
         maxSpeed,
         stopCount: stops.length,
       },
-      waypoints,
+      waypoints: finalWaypoints,
       stops,
     });
   } catch (error) {
