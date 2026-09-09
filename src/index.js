@@ -21,6 +21,7 @@ import peopleTrackerRoutes from './routes/peopleTrackers.js';
 import botRoutes from './routes/bot.js';
 import telemetryRoutes from './routes/telemetry.js';
 import paymentRoutes from './routes/payments.js';
+import plataformaPlusRoutes from './routes/plataformaPlus.js';
 import mongoose from 'mongoose';
 import './models/Company.js';
 import './models/User.js';
@@ -212,6 +213,7 @@ app.use('/api/people-trackers', peopleTrackerRoutes);
 app.use('/api/bot', botRoutes);
 app.use('/api/telemetry', telemetryRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/plataforma-plus', plataformaPlusRoutes);
 
 // 404 Handler
 app.use((req, res) => {
