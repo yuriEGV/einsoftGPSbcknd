@@ -9,6 +9,7 @@ import Alert from '../models/Alert.js';
 import SensorData from '../models/SensorData.js';
 import { authenticate } from '../middleware/auth.js';
 import { analyzePerson } from '../services/alertEngine.js';
+import { getUserSubscriptionAndLimits } from '../services/subscription.service.js';
 
 const router = express.Router();
 
@@ -42,7 +43,7 @@ router.get('/', authenticate, async (req, res) => {
       .populate('assignedVehicle', 'licensePlate make model status company')
       .populate('company', 'name code')
       .sort({ updatedAt: -1 });
-    const processed = trackers.map(t => {
+    let processed = trackers.map(t => {
       const obj = t.toObject();
       const coords = obj.location?.coordinates;
       const hasRealCoords = obj.hasReportedLocation === true && coords && Array.isArray(coords) && (coords[0] !== 0 || coords[1] !== 0);
@@ -58,6 +59,12 @@ router.get('/', authenticate, async (req, res) => {
       }
       return obj;
     });
+
+    // Si el usuario está en modo gratuito, restringir a máximo 1 celular/persona
+    const usage = await getUserSubscriptionAndLimits(userId);
+    if (!usage.isPaid) {
+      processed = processed.slice(0, 1);
+    }
 
     res.json(processed);
   } catch (error) {
@@ -143,6 +150,19 @@ router.post('/', authenticate, async (req, res) => {
     const userId = req.user?.id || req.user?._id;
     if (!userId) {
       return res.status(401).json({ error: 'Sesión de usuario no válida o expirable.' });
+    }
+
+    // Validar límite para modo gratuito (máximo 1 unidad en total: vehículo o celular)
+    const usage = await getUserSubscriptionAndLimits(userId);
+    if (!usage.isPaid) {
+      const existingVehicles = await Vehicle.countDocuments({ owner: userId });
+      const existingTrackers = await PersonTracker.countDocuments({ user: userId });
+      if ((existingVehicles + existingTrackers) >= 1) {
+        return res.status(403).json({
+          error: 'FREE_TIER_DEVICE_LIMIT',
+          message: 'El plan gratuito solo permite monitorear 1 unidad (1 vehículo o 1 celular). Contrata una membresía para agregar más personas o celulares a tu cuenta.',
+        });
+      }
     }
 
     let trackerCode = generateTrackerCode();

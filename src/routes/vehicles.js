@@ -10,6 +10,7 @@ import { authenticate, requirePermission } from '../middleware/auth.js';
 import { getVehicleScope } from '../middleware/scope.js';
 import { broadcastVehicleUpdate } from '../socket/index.js';
 import { resolveCity } from './sensors.js';
+import { getUserSubscriptionAndLimits } from '../services/subscription.service.js';
 
 const router = express.Router();
 
@@ -28,7 +29,7 @@ router.get('/', authenticate, async (req, res) => {
       .populate('company', 'name')
       .sort({ lastUpdate: -1 });
 
-    const processed = vehicles.map(v => {
+    let processed = vehicles.map(v => {
       const obj = v.toObject();
       const lastUpdate = v.lastUpdate || v.location?.timestamp;
       if (lastUpdate && (now - new Date(lastUpdate)) > 15 * 60 * 1000) {
@@ -36,6 +37,12 @@ router.get('/', authenticate, async (req, res) => {
       }
       return obj;
     });
+
+    // Si el usuario está en modo gratuito, restringir a máximo 1 vehículo
+    const usage = await getUserSubscriptionAndLimits(req.user.id);
+    if (!usage.isPaid) {
+      processed = processed.slice(0, 1);
+    }
 
     res.json(processed);
   } catch (error) {
@@ -65,6 +72,19 @@ router.get('/:id', authenticate, async (req, res) => {
 // ─── POST /vehicles — Crear vehículo (admin, fleet_manager, independent) ─────
 router.post('/', authenticate, requirePermission('vehicles.create'), async (req, res) => {
   try {
+    const usage = await getUserSubscriptionAndLimits(req.user.id);
+    if (!usage.isPaid) {
+      const existingVehicles = await Vehicle.countDocuments(getVehicleScope(req.user));
+      const PersonTracker = (await import('../models/PersonTracker.js')).default;
+      const existingTrackers = await PersonTracker.countDocuments({ user: req.user.id });
+      if ((existingVehicles + existingTrackers) >= 1) {
+        return res.status(403).json({
+          error: 'FREE_TIER_DEVICE_LIMIT',
+          message: 'El plan gratuito solo permite monitorear 1 unidad (1 vehículo o 1 celular). Contrata una membresía para agregar más vehículos a tu cuenta.',
+        });
+      }
+    }
+
     const { companyId, ...vehicleData } = req.body;
     const vehicle = new Vehicle({
       ...vehicleData,

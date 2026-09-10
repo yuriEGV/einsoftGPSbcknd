@@ -106,6 +106,18 @@ const userSchema = new mongoose.Schema({
     default: 'active',
   },
 
+  // ── Plan y Uso Gratuito / Demo ─────────────────────────────────────────────
+  subscriptionTier: {
+    type: String,
+    enum: ['free', 'paid'],
+    default: 'free',
+  },
+  dailyUsage: {
+    date: { type: String, default: '' }, // YYYY-MM-DD
+    queryCount: { type: Number, default: 0 },
+    lastQueryAt: { type: Date, default: null },
+  },
+
   // Vehículo asignado (para conductores)
   assignedVehicle: {
     type: mongoose.Schema.Types.ObjectId,

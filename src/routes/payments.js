@@ -3,7 +3,7 @@ import Plan from '../models/Plan.js';
 import Payment from '../models/Payment.js';
 import { authenticate, requireRole } from '../middleware/auth.js';
 import { createPayment, retryPayment, updatePaymentStatus, processWebhook } from '../services/payment.service.js';
-import { checkSubscriptionStatus, runExpiryCheck } from '../services/subscription.service.js';
+import { checkSubscriptionStatus, runExpiryCheck, getUserSubscriptionAndLimits, consumeDailyQuery, activateDirectPlan } from '../services/subscription.service.js';
 
 const router = express.Router();
 
@@ -269,6 +269,68 @@ router.post('/webhook', async (req, res) => {
   } catch (err) {
     console.error('[webhook MP] Error:', err.message);
     res.status(200).json({ received: true, error: err.message });
+  }
+});
+
+// ─── Estado de uso diario y límites de suscripción ────────────────────────────
+router.get('/usage-status', authenticate, async (req, res) => {
+  try {
+    const status = await getUserSubscriptionAndLimits(req.user.id);
+    res.json({ success: true, ...status });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Registrar consulta de ubicación (1 al día en plan gratuito) ───────────────
+router.post('/query-location', authenticate, async (req, res) => {
+  try {
+    const result = await consumeDailyQuery(req.user.id);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    if (err.code === 'DAILY_LIMIT_REACHED') {
+      return res.status(403).json({
+        error: 'DAILY_LIMIT_REACHED',
+        isBlocked: true,
+        message: 'Has alcanzado el límite de 1 consulta diaria del servicio gratuito. Activa tu membresía para continuar monitoreando 24/7.',
+        usage: err.usage,
+      });
+    }
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Activación directa de plan (para testing o aprobación inmediata) ─────────
+router.post('/demo-activate', authenticate, async (req, res) => {
+  try {
+    const { planCode = 'VEH-FAMILIAR', durationDays = 30 } = req.body;
+    const result = await activateDirectPlan(req.user.id, planCode, durationDays);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── Reiniciar consulta de prueba (Testing) ──────────────────────────────────
+router.post('/reset-daily-query', authenticate, async (req, res) => {
+  try {
+    const User = (await import('../models/User.js')).default;
+    await User.findByIdAndUpdate(req.user.id, {
+      $set: {
+        'dailyUsage.queryCount': 0,
+        'dailyUsage.date': '',
+      },
+      $unset: {
+        subscriptionTier: 1,
+      },
+    });
+    // Si tenía suscripción de prueba, marcarla expirada para volver a modo gratuito
+    const Subscription = (await import('../models/Subscription.js')).default;
+    await Subscription.deleteMany({ customerId: req.user.id, customerModel: 'User' });
+
+    res.json({ success: true, message: 'Usuario reiniciado a modo gratuito demo con 1 consulta disponible' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
