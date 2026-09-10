@@ -22,6 +22,7 @@ import botRoutes from './routes/bot.js';
 import telemetryRoutes from './routes/telemetry.js';
 import paymentRoutes from './routes/payments.js';
 import plataformaPlusRoutes from './routes/plataformaPlus.js';
+import downloadRoutes from './routes/download.js';
 import mongoose from 'mongoose';
 import './models/Company.js';
 import './models/User.js';
@@ -145,11 +146,11 @@ app.get('/api/health', async (req, res) => {
 // App Version & In-App OTA Update Check
 app.get('/api/app-version', (req, res) => {
   res.json({
-    latestVersion: '2.0.0',
-    versionCode: 200,
-    releaseName: 'EYE-NODE // TRACKER 360',
-    releaseDate: '2026-08-24',
-    apkUrl: 'https://einsoft-gp-sbcknd.vercel.app/eyenode.apk',
+    latestVersion: '2.1.0',
+    versionCode: 201,
+    releaseName: 'EYE-NODE // TRACKER 360 v2.1.0',
+    releaseDate: '2026-09-10',
+    apkUrl: 'https://einsoft-gp-sbcknd.vercel.app/api/download/apk',
     webUrl: 'https://einsoft-gp-sbcknd.vercel.app/eyenode',
     forceUpdate: false,
     minSupportedVersion: '1.0.0',
@@ -160,8 +161,16 @@ app.get('/api/app-version', (req, res) => {
       '🧠 Puntuación y comportamiento del conductor con IA en tiempo real',
       '📦 Caja Negra industrial offline con sincronización automática'
     ],
-    instructions: 'Descarga el nuevo archivo APK o presiona actualizar para activar la telemetría 360.'
+    instructions: 'Descarga el nuevo archivo APK v2.1.0 para activar la telemetría 360.'
   });
+});
+
+// Direct APK download routes
+app.get(['/einsoft-gps.apk', '/download/einsoft-gps.apk'], (req, res) => {
+  res.redirect(302, '/api/download/einsoft-gps.apk');
+});
+app.get(['/eyenode.apk', '/download/eyenode.apk'], (req, res) => {
+  res.redirect(302, '/api/download/eyenode.apk');
 });
 
 // ─── EYE-NODE Mobile PWA Direct Backend Hosting ──────────────────────────────
@@ -214,6 +223,7 @@ app.use('/api/bot', botRoutes);
 app.use('/api/telemetry', telemetryRoutes);
 app.use('/api/payments', paymentRoutes);
 app.use('/api/plataforma-plus', plataformaPlusRoutes);
+app.use('/api/download', downloadRoutes);
 
 // 404 Handler
 app.use((req, res) => {

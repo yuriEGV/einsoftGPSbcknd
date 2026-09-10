@@ -103,6 +103,21 @@ async function processTelemetryPoint(point, clientIp, io = null) {
     }
   }
 
+  // 3.1 If still unmatched and deviceId starts with EYE-NODE or MOVIL, link to primary mobile tracker
+  if (!targetVehicle && !targetPerson) {
+    const rawDevId = String(deviceId || trackerCode || '');
+    if (rawDevId.startsWith('EYE-NODE-') || rawDevId.startsWith('MOVIL-') || rawDevId.toLowerCase().includes('node')) {
+      targetPerson = await PersonTracker.findOne({ trackerCode: 'PER-139F17' });
+      if (!targetPerson) {
+        targetPerson = await PersonTracker.findOne({ name: /yuri/i });
+      }
+      if (targetPerson) {
+        targetPerson.deviceId = rawDevId;
+        await targetPerson.save().catch(() => {});
+      }
+    }
+  }
+
   // 4. Update Vehicle if matched
   if (targetVehicle) {
     if (hasCoords) {
@@ -260,6 +275,29 @@ async function processTelemetryPoint(point, clientIp, io = null) {
         timestamp: pointTime,
       });
     }
+  } else if (!targetVehicle && hasCoords) {
+    // If neither vehicle nor person was mapped, save sensor data by deviceIMEI
+    SensorData.create({
+      deviceIMEI: deviceId || trackerCode || 'MOBILE-GENERIC',
+      gps: {
+        latitude: lat,
+        longitude: lng,
+        accuracy,
+        altitude,
+        speed,
+        heading,
+      },
+      location: {
+        type: 'Point',
+        coordinates: [lng, lat],
+      },
+      speed,
+      heading,
+      altitude,
+      accuracy,
+      battery: { level: battery, isCharging },
+      timestamp: pointTime,
+    }).catch(() => {});
   }
 
   return { success: true, target: targetVehicle ? 'vehicle' : targetPerson ? 'person' : 'general', receivedAt };

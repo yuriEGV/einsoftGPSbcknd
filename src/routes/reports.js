@@ -134,6 +134,8 @@ router.get('/route-history', authenticate, async (req, res) => {
         vehicleOr.push({ deviceIMEI: vehicle.deviceIMEI });
       }
 
+      const hasCustomDateRange = Boolean(req.query.startDate && req.query.endDate);
+
       let sensorData = await SensorData.find({
         $or: vehicleOr,
         timestamp: { $gte: start, $lte: end },
@@ -141,8 +143,8 @@ router.get('/route-history', authenticate, async (req, res) => {
         .sort({ timestamp: 1 })
         .limit(Number(limit));
 
-      // Fallback: If 0 points in requested range, search most recent past points
-      if (sensorData.length === 0) {
+      // Only if no date range was specified at all, check for most recent points
+      if (!hasCustomDateRange && sensorData.length === 0) {
         sensorData = await SensorData.find({
           $or: vehicleOr,
         })
@@ -171,8 +173,8 @@ router.get('/route-history', authenticate, async (req, res) => {
         })
         .filter(Boolean);
 
-      // Fallback: If still no historical sensor docs, use current vehicle location
-      if (waypoints.length === 0 && vehicle.location?.coordinates && (vehicle.location.coordinates[0] !== 0 || vehicle.location.coordinates[1] !== 0)) {
+      // Only fallback to vehicle current location if no custom date range was requested and no waypoints exist
+      if (!hasCustomDateRange && waypoints.length === 0 && vehicle.location?.coordinates && (vehicle.location.coordinates[0] !== 0 || vehicle.location.coordinates[1] !== 0)) {
         waypoints.push({
           lat: vehicle.location.coordinates[1],
           lng: vehicle.location.coordinates[0],
@@ -197,6 +199,8 @@ router.get('/route-history', authenticate, async (req, res) => {
       if (person.deviceId) personOr.push({ deviceIMEI: person.deviceId });
       if (person.trackerCode) personOr.push({ deviceIMEI: person.trackerCode });
 
+      const hasCustomDateRange = Boolean(req.query.startDate && req.query.endDate);
+
       let sensorData = await SensorData.find({
         $or: personOr,
         timestamp: { $gte: start, $lte: end },
@@ -204,8 +208,8 @@ router.get('/route-history', authenticate, async (req, res) => {
         .sort({ timestamp: 1 })
         .limit(Number(limit));
 
-      // Fallback: If 0 points in requested range, search most recent past points
-      if (sensorData.length === 0) {
+      // Only if no custom date filter was provided, search for most recent points
+      if (!hasCustomDateRange && sensorData.length === 0) {
         sensorData = await SensorData.find({
           $or: personOr,
         })
@@ -234,7 +238,8 @@ router.get('/route-history', authenticate, async (req, res) => {
         })
         .filter(Boolean);
 
-      if (waypoints.length === 0 && person.location?.coordinates && (person.location.coordinates[0] !== 0 || person.location.coordinates[1] !== 0)) {
+      // Only fallback to person last location if NO date filter was specified
+      if (!hasCustomDateRange && waypoints.length === 0 && person.location?.coordinates && (person.location.coordinates[0] !== 0 || person.location.coordinates[1] !== 0)) {
         waypoints.push({
           lat: person.location.coordinates[1],
           lng: person.location.coordinates[0],
@@ -323,7 +328,7 @@ router.get('/route-history', authenticate, async (req, res) => {
       }
     }
 
-    // Compute Metrics & Stops
+    // Compute Metrics, Distance & Durations
     const speeds = finalWaypoints.map(w => w.speed);
     const avgSpeed = speeds.length > 0 ? Math.round(speeds.reduce((a, b) => a + b, 0) / speeds.length) : 0;
     const maxSpeed = speeds.length > 0 ? Math.max(...speeds) : 0;
@@ -336,6 +341,55 @@ router.get('/route-history', authenticate, async (req, res) => {
       timestamp: w.timestamp,
       address: w.address,
     }));
+
+    // Calculate real Haversine distance in Km
+    let totalDistanceKm = 0;
+    let drivingSeconds = 0;
+    for (let i = 1; i < finalWaypoints.length; i++) {
+      const p1 = finalWaypoints[i - 1];
+      const p2 = finalWaypoints[i];
+      const dLat = (p2.lat - p1.lat) * (Math.PI / 180);
+      const dLng = (p2.lng - p1.lng) * (Math.PI / 180);
+      const a =
+        Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+        Math.cos(p1.lat * (Math.PI / 180)) * Math.cos(p2.lat * (Math.PI / 180)) * Math.sin(dLng / 2) * Math.sin(dLng / 2);
+      const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+      const distKm = 6371 * c;
+      if (!isNaN(distKm) && distKm < 50) {
+        totalDistanceKm += distKm;
+      }
+
+      const t1 = new Date(p1.timestamp).getTime();
+      const t2 = new Date(p2.timestamp).getTime();
+      const diffSec = Math.max(0, Math.min(1800, Math.floor((t2 - t1) / 1000)));
+      if (p2.speed > 3 || p1.speed > 3) {
+        drivingSeconds += diffSec;
+      }
+    }
+
+    let totalDurationSec = 0;
+    if (finalWaypoints.length >= 2) {
+      const startT = new Date(finalWaypoints[0].timestamp).getTime();
+      const endT = new Date(finalWaypoints[finalWaypoints.length - 1].timestamp).getTime();
+      totalDurationSec = Math.max(0, Math.floor((endT - startT) / 1000));
+    }
+    const idleSeconds = Math.max(0, totalDurationSec - drivingSeconds);
+
+    const formatDuration = (sec) => {
+      const h = Math.floor(sec / 3600);
+      const m = Math.floor((sec % 3600) / 60);
+      const s = sec % 60;
+      return [h, m, s].map(v => String(v).padStart(2, '0')).join(':');
+    };
+
+    const summary = {
+      maxSpeed,
+      avgSpeed,
+      totalDistanceKm: totalDistanceKm.toFixed(2),
+      drivingTime: formatDuration(drivingSeconds),
+      idleTime: formatDuration(idleSeconds),
+      lastUpdate: finalWaypoints.length > 0 ? finalWaypoints[finalWaypoints.length - 1].timestamp : null,
+    };
 
     res.json({
       targetType,
@@ -351,6 +405,7 @@ router.get('/route-history', authenticate, async (req, res) => {
         maxSpeed,
         stopCount: stops.length,
       },
+      summary,
       waypoints: finalWaypoints,
       stops,
     });
