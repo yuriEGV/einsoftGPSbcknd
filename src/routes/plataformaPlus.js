@@ -336,6 +336,69 @@ router.post('/community-alerts', (req, res) => {
   }
 });
 
+// In-memory / persistent SOS config
+let globalSosConfig = {
+  emergencyPhone: '',
+  centralName: 'Central Receptora 24/7',
+  secondaryPhone: '',
+  contactName: '',
+  whatsappAlerts: true,
+  autoDial: true,
+  policeDispatch133: true,
+  pdiDispatch134: true,
+  notes: 'Protocolo de Emergencia Satelital Ley 21.171',
+  updatedAt: new Date().toISOString(),
+};
+
+// ─── GET /api/plataforma-plus/sos-config ───────────────────────────────────────
+router.get('/sos-config', (req, res) => {
+  res.json({
+    success: true,
+    config: globalSosConfig,
+    isConfigured: Boolean(globalSosConfig.emergencyPhone && globalSosConfig.emergencyPhone.trim().length >= 7),
+  });
+});
+
+// ─── PUT /api/plataforma-plus/sos-config ───────────────────────────────────────
+router.put('/sos-config', (req, res) => {
+  try {
+    const {
+      emergencyPhone,
+      centralName,
+      secondaryPhone,
+      contactName,
+      whatsappAlerts = true,
+      autoDial = true,
+      policeDispatch133 = true,
+      pdiDispatch134 = true,
+      notes = '',
+    } = req.body;
+
+    globalSosConfig = {
+      ...globalSosConfig,
+      emergencyPhone: String(emergencyPhone || '').trim(),
+      centralName: String(centralName || 'Central Receptora 24/7').trim(),
+      secondaryPhone: String(secondaryPhone || '').trim(),
+      contactName: String(contactName || '').trim(),
+      whatsappAlerts: Boolean(whatsappAlerts),
+      autoDial: Boolean(autoDial),
+      policeDispatch133: Boolean(policeDispatch133),
+      pdiDispatch134: Boolean(pdiDispatch134),
+      notes: String(notes || ''),
+      updatedAt: new Date().toISOString(),
+    };
+
+    res.json({
+      success: true,
+      message: 'Configuración SOS actualizada correctamente.',
+      config: globalSosConfig,
+      isConfigured: Boolean(globalSosConfig.emergencyPhone && globalSosConfig.emergencyPhone.trim().length >= 7),
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 // ─── POST /api/plataforma-plus/emergency-dispatch ──────────────────────────────
 router.post('/emergency-dispatch', async (req, res) => {
   try {
@@ -362,6 +425,27 @@ router.post('/emergency-dispatch', async (req, res) => {
       notes: `EMERGENCIA SOS // Protocolo 24/7 activado. Evento: ${incidentType}. Destinatario: ${targetScope}. Folio: ${folio}`,
     }).catch(() => null);
 
+    const targetPhone = req.body.emergencyPhone || globalSosConfig.emergencyPhone || '';
+    const targetCentral = req.body.centralName || globalSosConfig.centralName || 'Central Receptora';
+    const isPhoneConfigured = Boolean(targetPhone && targetPhone.trim().length >= 7);
+
+    const forces = [];
+    if (globalSosConfig.policeDispatch133 !== false) {
+      forces.push({ force: 'Carabineros de Chile (133)', status: 'NOTIFICADO_DISPACHO_INMEDIATO', priority: 'ROJA' });
+    }
+    if (globalSosConfig.pdiDispatch134 !== false) {
+      forces.push({ force: 'Policía de Investigaciones PDI (134)', status: 'ALERTA_MONITOREO_ENCARGOS', priority: 'MEDIA' });
+    }
+    forces.push({
+      force: isPhoneConfigured
+        ? `${targetCentral} (${targetPhone})`
+        : 'Central Telefónica (⚠️ Número no configurado)',
+      status: isPhoneConfigured ? 'LLAMADA_SALIENTE_ACTIVADA' : 'PENDIENTE_CONFIGURAR_NUMERO',
+      priority: 'URGENTE',
+      phone: targetPhone,
+      isConfigured: isPhoneConfigured,
+    });
+
     // Coordinate with Emergency Services
     const dispatchPlan = {
       folio,
@@ -369,11 +453,10 @@ router.post('/emergency-dispatch', async (req, res) => {
       incidentType: incidentType || 'SOS_PANICO_GENERAL',
       targetScope: targetScope || 'A_MI',
       audioVerificationChannel: 'CANAL_1_ENCENDIDO',
-      forcesContacted: [
-        { force: 'Carabineros de Chile (133)', status: 'NOTIFICADO_DISPACHO_INMEDIATO', priority: 'ROJA' },
-        { force: 'Policía de Investigaciones PDI (134)', status: 'ALERTA_MONITOREO_ENCARGOS', priority: 'MEDIA' },
-        { force: 'Central Telefónica 24/7 (+56 9 Soporte)', status: 'LLAMADA_SALIENTE_ACTIVADA', priority: 'URGENTE' },
-      ],
+      emergencyPhone: targetPhone,
+      centralName: targetCentral,
+      isConfigured: isPhoneConfigured,
+      forcesContacted: forces,
       vehicleProtection: {
         inmobilizationReady: true,
         gpsTrackingHighFrequency: '1_SEGUNDO',
