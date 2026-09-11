@@ -275,6 +275,40 @@ async function processTelemetryPoint(point, clientIp, io = null) {
         timestamp: pointTime,
       });
     }
+
+    // Also sync and broadcast to any vehicle assigned to this person tracker
+    if (hasCoords) {
+      try {
+        const linkedVehicles = await Vehicle.find({ assignedPerson: targetPerson._id });
+        for (const lv of linkedVehicles) {
+          lv.location = {
+            type: 'Point',
+            coordinates: [lng, lat],
+            address: targetPerson.location?.address || `GPS (${lat.toFixed(5)}, ${lng.toFixed(5)})`,
+          };
+          lv.speed = speed;
+          lv.lastUpdate = pointTime;
+          if (effectivePanic) lv.status = 'alert';
+          await lv.save();
+
+          if (io) {
+            broadcastVehicleUpdate(io, lv._id, {
+              lat,
+              lng,
+              speed,
+              heading,
+              altitude,
+              accuracy,
+              battery,
+              timestamp: pointTime,
+              status: lv.status,
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('[telemetry] Error updating linked vehicles from person:', err);
+      }
+    }
   } else if (!targetVehicle && hasCoords) {
     // If neither vehicle nor person was mapped, save sensor data by deviceIMEI
     SensorData.create({
@@ -391,6 +425,9 @@ router.post('/', handleTelemetryRequest);
 // ─── GET & POST /api/telemetry/report ───────────────────────────────────────────
 router.get('/report', handleTelemetryRequest);
 router.post('/report', handleTelemetryRequest);
+
+// ─── ALL /api/telemetry/ping — Forzar reporte de ping en tiempo real ──────────
+router.all('/ping', handleTelemetryRequest);
 
 // ─── POST /api/telemetry/batch — Sincronización de cola acumulada offline ───────
 router.post('/batch', async (req, res) => {
