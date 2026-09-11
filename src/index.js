@@ -146,22 +146,22 @@ app.get('/api/health', async (req, res) => {
 // App Version & In-App OTA Update Check
 app.get('/api/app-version', (req, res) => {
   res.json({
-    latestVersion: '2.2.0',
-    versionCode: 203,
-    releaseName: 'EYE-NODE // TRACKER 360 TACTICAL v2.2.0',
+    latestVersion: '2.3.0',
+    versionCode: 204,
+    releaseName: 'EYE-NODE 360 — Nodo Táctico v2.3.0',
     releaseDate: '2026-09-11',
     apkUrl: 'https://einsoft-gp-sbcknd.vercel.app/api/download/apk',
     webUrl: 'https://einsoft-gp-sbcknd.vercel.app/eyenode',
     forceUpdate: false,
     minSupportedVersion: '1.0.0',
     features: [
-      '🛰️ Mapa Táctico 360 en vivo con rastro GNSS en tiempo real',
-      '📡 Emisión manual de PING instantáneo reflejado en plataforma web',
-      '🎯 Radar de geolocalización de alta precisión con centrado automático',
-      '📋 Bitácora táctica de eventos IMU, choques y alertas de Fuerza G',
-      '🏢 Gestión corporativa completa y vinculación de flotas a empresas'
+      '🛰️ Interfaz simplificada: Sensores, Mapa Táctico y Bitácora',
+      '📡 Ping en tiempo real visible en plataforma web inmediatamente',
+      '🟢 Transmisión automática al abrir la app — sin configuración previa',
+      '⏸️ Pausar Nodo para ahorrar batería cuando se necesite',
+      '🛡️ Modo Centinela con tooltip explicativo en primer uso'
     ],
-    instructions: 'Descarga el nuevo archivo APK v2.2.0 para activar el Mapa Táctico 360 y la emisión de Pings en vivo.'
+    instructions: 'Descarga EYE-NODE 360 v2.3.0: interfaz simplificada, transmisión automática y Ping en tiempo real.'
   });
 });
 
