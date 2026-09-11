@@ -152,4 +152,71 @@ router.delete('/:id', authenticate, adminOrSuperadmin, async (req, res) => {
   }
 });
 
+// ─── GET /:id/vehicles — Listar vehículos asignados a una empresa ─────────────
+router.get('/:id/vehicles', authenticate, adminOrSuperadmin, async (req, res) => {
+  try {
+    const Vehicle = mongoose.model('Vehicle');
+    const vehicles = await Vehicle.find({ company: req.params.id })
+      .populate('driver', 'name email phone')
+      .populate('assignedPerson', 'name phone trackerCode deviceId')
+      .sort({ licensePlate: 1 });
+    res.json(vehicles);
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─── POST /:id/assign-vehicles — Asignar vehículos a una empresa ──────────────
+router.post('/:id/assign-vehicles', authenticate, adminOrSuperadmin, async (req, res) => {
+  try {
+    const { vehicleIds } = req.body;
+    if (!Array.isArray(vehicleIds) || vehicleIds.length === 0) {
+      return res.status(400).json({ error: 'Se requiere un arreglo vehicleIds con al menos un vehículo' });
+    }
+
+    const company = await Company.findById(req.params.id);
+    if (!company) {
+      return res.status(404).json({ error: 'Empresa no encontrada' });
+    }
+
+    const Vehicle = mongoose.model('Vehicle');
+    await Vehicle.updateMany(
+      { _id: { $in: vehicleIds } },
+      { $set: { company: company._id } }
+    );
+
+    const updatedVehicles = await Vehicle.find({ company: company._id })
+      .populate('driver', 'name email phone');
+
+    res.json({
+      success: true,
+      message: `${vehicleIds.length} vehículo(s) asignado(s) a ${company.name} exitosamente`,
+      assignedCount: vehicleIds.length,
+      vehicles: updatedVehicles,
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// ─── POST /:id/unassign-vehicle — Desasignar un vehículo de una empresa ──────
+router.post('/:id/unassign-vehicle', authenticate, adminOrSuperadmin, async (req, res) => {
+  try {
+    const { vehicleId } = req.body;
+    if (!vehicleId) {
+      return res.status(400).json({ error: 'vehicleId es obligatorio' });
+    }
+
+    const Vehicle = mongoose.model('Vehicle');
+    await Vehicle.findByIdAndUpdate(vehicleId, { $unset: { company: 1 } });
+
+    res.json({
+      success: true,
+      message: 'Vehículo desasignado de la empresa exitosamente',
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 export default router;

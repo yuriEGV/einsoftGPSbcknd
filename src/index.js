@@ -146,22 +146,22 @@ app.get('/api/health', async (req, res) => {
 // App Version & In-App OTA Update Check
 app.get('/api/app-version', (req, res) => {
   res.json({
-    latestVersion: '2.1.0',
-    versionCode: 201,
-    releaseName: 'EYE-NODE // TRACKER 360 v2.1.0',
-    releaseDate: '2026-09-10',
+    latestVersion: '2.1.1',
+    versionCode: 202,
+    releaseName: 'EYE-NODE // TRACKER 360 v2.1.1',
+    releaseDate: '2026-09-11',
     apkUrl: 'https://einsoft-gp-sbcknd.vercel.app/api/download/apk',
     webUrl: 'https://einsoft-gp-sbcknd.vercel.app/eyenode',
     forceUpdate: false,
     minSupportedVersion: '1.0.0',
     features: [
-      '🚀 Nuevo motor táctico EYE-NODE 360 con IMU 6-Ejes',
+      '🏢 Gestión corporativa completa y vinculación de flotas a empresas',
+      '🚗 Asignación multi-vehículo y creación directa de unidades por empresa',
+      '🚀 Motor táctico EYE-NODE 360 con IMU 6-Ejes y SOS de emergencia',
       '💥 Detección instantánea de choques e impactos de Fuerza G',
-      '🛡️ Modo Centinela anti-manipulación y anti-robo en reposo',
-      '🧠 Puntuación y comportamiento del conductor con IA en tiempo real',
-      '📦 Caja Negra industrial offline con sincronización automática'
+      '🛡️ Modo Centinela anti-manipulación y anti-robo en reposo'
     ],
-    instructions: 'Descarga el nuevo archivo APK v2.1.0 para activar la telemetría 360.'
+    instructions: 'Descarga el nuevo archivo APK v2.1.1 para activar todas las funciones y asignaciones.'
   });
 });
 

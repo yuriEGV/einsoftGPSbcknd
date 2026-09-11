@@ -85,13 +85,19 @@ router.post('/', authenticate, requirePermission('vehicles.create'), async (req,
       }
     }
 
-    const { companyId, ...vehicleData } = req.body;
+    const { companyId, company: companyBody, ...vehicleData } = req.body;
+    const targetCompany = companyId || companyBody;
+    const assignedCompany = (['superadmin', 'admin'].includes(req.user.role))
+      ? (targetCompany || req.user.company || undefined)
+      : (req.user.company || undefined);
+
     const vehicle = new Vehicle({
       ...vehicleData,
-      company: req.user.company || (req.user.role === 'admin' ? companyId : undefined) || undefined,
+      company: assignedCompany,
       owner: req.user.id,
     });
     await vehicle.save();
+    await vehicle.populate('company', 'name email phone');
     res.status(201).json(vehicle);
   } catch (error) {
     res.status(500).json({ error: error.message });
@@ -101,16 +107,18 @@ router.post('/', authenticate, requirePermission('vehicles.create'), async (req,
 // ─── PUT /vehicles/:id — Editar vehículo (admin, fleet_manager, independent) ─
 router.put('/:id', authenticate, requirePermission('vehicles.create'), async (req, res) => {
   try {
-    const { companyId, ...updateData } = req.body;
+    const { companyId, company: companyBody, ...updateData } = req.body;
     const filter = getVehicleScope(req.user, req.params.id);
 
-    if (req.user.role === 'admin' && companyId) {
-      updateData.company = companyId;
+    const targetCompany = companyId !== undefined ? companyId : companyBody;
+    if (['superadmin', 'admin'].includes(req.user.role) && targetCompany !== undefined) {
+      updateData.company = (targetCompany && targetCompany !== '') ? targetCompany : null;
     }
 
     const vehicle = await Vehicle.findOneAndUpdate(filter, updateData, { new: true })
       .populate('driver', 'name email phone')
-      .populate('assignedPerson', 'name phone trackerCode deviceId');
+      .populate('assignedPerson', 'name phone trackerCode deviceId')
+      .populate('company', 'name email phone');
     if (!vehicle) return res.status(404).json({ error: 'Vehículo no encontrado o sin acceso' });
     res.json(vehicle);
   } catch (error) {
