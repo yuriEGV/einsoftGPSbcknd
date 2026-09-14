@@ -104,17 +104,76 @@ router.get('/export/pdf/:vehicleId', authenticate, requireRole('admin', 'fleet_m
   }
 });
 
+// Helper para resolver nombre de sector/ciudad chilena cuando no hay dirección inversa en el punto
+function resolveSectorName(lat, lng, rawAddress) {
+  if (rawAddress && rawAddress !== 'Coordenadas desde Celular' && rawAddress !== 'Esperando señal GPS...' && rawAddress !== 'Ubicación reportada' && rawAddress !== 'Ubicación actual') {
+    return rawAddress;
+  }
+  if (!lat || !lng) return 'Sin coordenadas';
+  // Viña del Mar
+  if (lat >= -33.05 && lat <= -32.95 && lng >= -71.58 && lng <= -71.49) {
+    if (lat >= -33.03 && lat <= -33.01 && lng >= -71.56 && lng <= -71.52) {
+      return 'Plaza Viña / 1 Norte, Viña del Mar';
+    }
+    return 'Viña del Mar, Región de Valparaíso';
+  }
+  // Reñaca / Concón
+  if (lat >= -32.98 && lat <= -32.90 && lng >= -71.56 && lng <= -71.50) {
+    return 'Reñaca / Concón, Región de Valparaíso';
+  }
+  // Valparaíso: Cerro Placeres / Esperanza
+  if (lat >= -33.06 && lat <= -33.03 && lng >= -71.60 && lng <= -71.57) {
+    return 'Cerro Placeres / Esperanza, Valparaíso';
+  }
+  // Valparaíso: Cerro Rodelillo / Barón
+  if (lat >= -33.06 && lat <= -33.03 && lng >= -71.615 && lng <= -71.58) {
+    return 'Cerro Barón / Rodelillo, Valparaíso';
+  }
+  // Valparaíso: Almendral / Centro / Puerto
+  if (lat >= -33.06 && lat <= -33.03 && lng >= -71.635 && lng <= -71.61) {
+    return 'Centro / Almendral, Valparaíso';
+  }
+  // Valparaíso: Playa Ancha
+  if (lat >= -33.06 && lat <= -33.01 && lng >= -71.68 && lng <= -71.635) {
+    return 'Playa Ancha, Valparaíso';
+  }
+  // Quilpué / Villa Alemana
+  if (lat >= -33.07 && lat <= -33.02 && lng >= -71.48 && lng <= -71.35) {
+    return 'Quilpué / Villa Alemana, Región de Valparaíso';
+  }
+  // Santiago RM
+  if (lat >= -33.70 && lat <= -33.25 && lng >= -70.85 && lng <= -70.40) {
+    return 'Santiago, Región Metropolitana';
+  }
+  return `Ubicación (${lat.toFixed(5)}, ${lng.toFixed(5)})`;
+}
+
 // ─── GET /reports/route-history — Historial de rutas y playback para vehículos y celulares ──
 router.get('/route-history', authenticate, async (req, res) => {
   try {
-    const { targetType = 'vehicle', targetId, startDate, endDate, limit = 500 } = req.query;
+    const { targetType = 'vehicle', targetId, startDate, endDate, limit = 2000 } = req.query;
 
     if (!targetId) {
       return res.status(400).json({ error: 'targetId es requerido.' });
     }
 
-    const start = startDate ? new Date(startDate) : new Date(Date.now() - 24 * 60 * 60 * 1000); // 24h default
-    const end = endDate ? new Date(endDate) : new Date();
+    // Manejo de fechas con margen horario para evitar recortes por zona horaria UTC vs UTC-3/4
+    let start, end;
+    if (startDate) {
+      start = new Date(startDate);
+      // Margen de 4 horas previas para capturar eventos de madrugada chilena en UTC
+      start = new Date(start.getTime() - 4 * 3600 * 1000);
+    } else {
+      start = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000); // 7 días por defecto
+    }
+
+    if (endDate) {
+      end = new Date(endDate);
+      // Margen de 4 horas posteriores
+      end = new Date(end.getTime() + 4 * 3600 * 1000);
+    } else {
+      end = new Date(Date.now() + 4 * 3600 * 1000);
+    }
 
     let waypoints = [];
     let entityName = '';
@@ -128,11 +187,11 @@ router.get('/route-history', authenticate, async (req, res) => {
       entityName = `${vehicle.make} ${vehicle.model} (${vehicle.licensePlate})`;
       entityCode = vehicle.licensePlate;
 
-      // Match by vehicle ObjectId or deviceIMEI
+      // Match por vehicle ObjectId, deviceIMEI, licensePlate y assignedTracker
       const vehicleOr = [{ vehicle: vehicle._id }];
-      if (vehicle.deviceIMEI) {
-        vehicleOr.push({ deviceIMEI: vehicle.deviceIMEI });
-      }
+      if (vehicle.deviceIMEI) vehicleOr.push({ deviceIMEI: vehicle.deviceIMEI });
+      if (vehicle.licensePlate) vehicleOr.push({ deviceIMEI: vehicle.licensePlate });
+      if (vehicle.assignedTracker) vehicleOr.push({ personTracker: vehicle.assignedTracker });
 
       const hasCustomDateRange = Boolean(req.query.startDate && req.query.endDate);
 
@@ -143,7 +202,7 @@ router.get('/route-history', authenticate, async (req, res) => {
         .sort({ timestamp: 1 })
         .limit(Number(limit));
 
-      // Only if no date range was specified at all, check for most recent points
+      // Si no hay puntos en el rango y no se especificó un rango custom estricto, buscar los más recientes
       if (!hasCustomDateRange && sensorData.length === 0) {
         sensorData = await SensorData.find({
           $or: vehicleOr,
@@ -167,28 +226,30 @@ router.get('/route-history', authenticate, async (req, res) => {
             altitude: Math.round(s.gps?.altitude || 0),
             fuel: s.fuel?.level != null ? s.fuel.level : null,
             battery: s.battery?.level != null ? s.battery.level : null,
-            address: s.gps?.address || s.location?.address || null,
+            address: resolveSectorName(lat, lng, s.gps?.address || s.location?.address),
             timestamp: s.timestamp,
           };
         })
         .filter(Boolean);
 
-      // Only fallback to vehicle current location if no custom date range was requested and no waypoints exist
+      // Fallback a ubicación actual del vehículo si no hay puntos
       if (!hasCustomDateRange && waypoints.length === 0 && vehicle.location?.coordinates && (vehicle.location.coordinates[0] !== 0 || vehicle.location.coordinates[1] !== 0)) {
+        const vLat = vehicle.location.coordinates[1];
+        const vLng = vehicle.location.coordinates[0];
         waypoints.push({
-          lat: vehicle.location.coordinates[1],
-          lng: vehicle.location.coordinates[0],
+          lat: vLat,
+          lng: vLng,
           speed: vehicle.speed || 0,
           heading: vehicle.heading || 0,
           altitude: 0,
           fuel: vehicle.fuelLevel || 100,
           battery: 100,
-          address: vehicle.location.address || 'Ubicación actual',
+          address: resolveSectorName(vLat, vLng, vehicle.location.address),
           timestamp: vehicle.lastUpdate || new Date(),
         });
       }
     } else {
-      // Person Tracker
+      // Person Tracker / App Celular
       const person = await PersonTracker.findById(targetId);
       if (!person) return res.status(404).json({ error: 'Persona no encontrada.' });
 
@@ -198,6 +259,14 @@ router.get('/route-history', authenticate, async (req, res) => {
       const personOr = [{ personTracker: person._id }];
       if (person.deviceId) personOr.push({ deviceIMEI: person.deviceId });
       if (person.trackerCode) personOr.push({ deviceIMEI: person.trackerCode });
+      if (Array.isArray(person.aliases)) {
+        person.aliases.forEach(a => {
+          if (a) personOr.push({ deviceIMEI: a });
+        });
+      }
+      if (person.assignedVehicle) {
+        personOr.push({ vehicle: person.assignedVehicle });
+      }
 
       const hasCustomDateRange = Boolean(req.query.startDate && req.query.endDate);
 
@@ -208,7 +277,7 @@ router.get('/route-history', authenticate, async (req, res) => {
         .sort({ timestamp: 1 })
         .limit(Number(limit));
 
-      // Only if no custom date filter was provided, search for most recent points
+      // Si no se encontró nada en el rango estricto y no fue un filtro personalizado, buscar más recientes
       if (!hasCustomDateRange && sensorData.length === 0) {
         sensorData = await SensorData.find({
           $or: personOr,
@@ -232,23 +301,25 @@ router.get('/route-history', authenticate, async (req, res) => {
             altitude: Math.round(s.gps?.altitude || 0),
             fuel: null,
             battery: s.battery?.level != null ? s.battery.level : person.batteryLevel || 100,
-            address: s.gps?.address || s.location?.address || person.location?.address || null,
+            address: resolveSectorName(lat, lng, s.gps?.address || s.location?.address || person.location?.address),
             timestamp: s.timestamp,
           };
         })
         .filter(Boolean);
 
-      // Only fallback to person last location if NO date filter was specified
+      // Fallback a última ubicación conocida si no hay puntos
       if (!hasCustomDateRange && waypoints.length === 0 && person.location?.coordinates && (person.location.coordinates[0] !== 0 || person.location.coordinates[1] !== 0)) {
+        const pLat = person.location.coordinates[1];
+        const pLng = person.location.coordinates[0];
         waypoints.push({
-          lat: person.location.coordinates[1],
-          lng: person.location.coordinates[0],
+          lat: pLat,
+          lng: pLng,
           speed: person.speed || 0,
           heading: 0,
           altitude: 0,
           fuel: null,
           battery: person.batteryLevel || 100,
-          address: person.location.address || 'Ubicación reportada',
+          address: resolveSectorName(pLat, pLng, person.location.address),
           timestamp: person.location.timestamp || person.updatedAt || new Date(),
         });
       }

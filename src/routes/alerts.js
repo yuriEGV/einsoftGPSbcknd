@@ -3,6 +3,7 @@ import mongoose from 'mongoose';
 import Alert from '../models/Alert.js';
 import Vehicle from '../models/Vehicle.js';
 import PanicAlert from '../models/PanicAlert.js';
+import PersonTracker from '../models/PersonTracker.js';
 import { authenticate, requirePermission, requireAnyPermission } from '../middleware/auth.js';
 import { getAlertScope } from '../middleware/scope.js';
 import { broadcastAlert } from '../socket/index.js';
@@ -134,26 +135,81 @@ router.post('/panic', authenticate, requirePermission('panic.create'), async (re
   }
 });
 
-// ─── GET /alerts — Listar alertas según scope del rol ────────────────────────────
+// ─── GET /alerts — Listar alertas según scope del rol (Unificando Alert + PanicAlert) ──
 router.get('/', authenticate, requirePermission('alerts.view'), async (req, res) => {
   try {
-    const { status = 'all', severity = 'all', limit = 50 } = req.query;
+    const { status = 'all', severity = 'all', limit = 150 } = req.query;
 
     const scopeQuery = await getAlertScope(req.user);
-    let query = { ...scopeQuery };
+    let alertQuery = { ...scopeQuery };
 
-    if (status === 'unacknowledged') query.acknowledged = false;
-    else if (status === 'acknowledged') query.acknowledged = true;
-    if (severity !== 'all') query.severity = severity;
+    if (status === 'unacknowledged') alertQuery.acknowledged = false;
+    else if (status === 'acknowledged') alertQuery.acknowledged = true;
+    if (severity !== 'all') alertQuery.severity = severity;
 
-    const alerts = await Alert.find(query)
-      .populate('vehicle', 'licensePlate')
-      .populate('driver', 'name')
+    // 1. Obtener alertas de la colección estándar Alert
+    const standardAlerts = await Alert.find(alertQuery)
+      .populate('vehicle', 'licensePlate make model')
+      .populate('driver', 'name email phone')
+      .populate('personTracker', 'name trackerCode phone')
       .sort({ createdAt: -1 })
-      .limit(parseInt(limit));
+      .limit(parseInt(limit))
+      .lean();
 
-    res.json(alerts);
+    // 2. Obtener alertas de la colección PanicAlert (donde se han registrado los pánicos reales)
+    let panicAlerts = [];
+    if (severity === 'all' || severity === 'critical') {
+      let panicQuery = {};
+      if (scopeQuery.company) panicQuery.company = scopeQuery.company;
+      
+      if (status === 'unacknowledged') {
+        panicQuery.status = 'ACTIVE';
+      } else if (status === 'acknowledged') {
+        panicQuery.status = { $in: ['ACKNOWLEDGED', 'RESOLVED', 'FALSE_ALARM'] };
+      }
+
+      const rawPanics = await PanicAlert.find(panicQuery)
+        .populate('vehicle', 'licensePlate make model')
+        .populate('person', 'name trackerCode phone')
+        .sort({ triggeredAt: -1 })
+        .limit(parseInt(limit))
+        .lean();
+
+      panicAlerts = rawPanics.map(p => ({
+        _id: p._id,
+        isPanicDoc: true,
+        type: 'panic',
+        severity: 'critical',
+        source: p.source,
+        message: p.source === 'person'
+          ? `🚨 BOTÓN DE PÁNICO SOS: ${p.person?.name || 'Celular / EYE-NODE 360'}`
+          : `🚨 BOTÓN DE PÁNICO SOS: ${p.vehicle?.licensePlate || 'Vehículo'}`,
+        description: p.notes || `Alerta de pánico SOS activada en ${p.address || 'vía pública'}.`,
+        location: {
+          latitude: p.latitude,
+          longitude: p.longitude,
+          address: p.address || (p.latitude && p.longitude ? `Ubicación (${p.latitude.toFixed(5)}, ${p.longitude.toFixed(5)})` : 'Sin dirección'),
+        },
+        speed: p.speed || 0,
+        vehicle: p.vehicle || null,
+        personTracker: p.person || null,
+        driver: null,
+        acknowledged: p.status === 'ACKNOWLEDGED' || p.status === 'RESOLVED',
+        acknowledgedBy: p.acknowledgedBy ? { name: p.acknowledgedBy } : null,
+        acknowledgedAt: p.acknowledgedAt,
+        createdAt: p.triggeredAt,
+        status: p.status,
+      }));
+    }
+
+    // 3. Fusionar ambas colecciones y ordenar cronológicamente
+    const combined = [...standardAlerts, ...panicAlerts]
+      .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+      .slice(0, parseInt(limit));
+
+    res.json(combined);
   } catch (error) {
+    console.error('Error GET /alerts:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -162,7 +218,6 @@ router.get('/', authenticate, requirePermission('alerts.view'), async (req, res)
 router.get('/vehicle/:vehicleId', authenticate, requirePermission('alerts.view'), async (req, res) => {
   try {
     const { days = 7 } = req.query;
-
 
     // Verificar acceso al vehículo
     const { getVehicleScope } = await import('./vehicles.js');
@@ -176,7 +231,6 @@ router.get('/vehicle/:vehicleId', authenticate, requirePermission('alerts.view')
       createdAt: { $gte: startTime },
     };
 
-    // Acotar además por empresa si aplica
     if (req.user.company) alertFilter.company = req.user.company;
 
     const alerts = await Alert.find(alertFilter).sort({ createdAt: -1 });
@@ -186,24 +240,40 @@ router.get('/vehicle/:vehicleId', authenticate, requirePermission('alerts.view')
   }
 });
 
-// ─── POST /alerts/:alertId/acknowledge — Marcar alerta leída ─────────────────
+// ─── POST /alerts/:alertId/acknowledge — Marcar alerta leída (Alert o PanicAlert) ─
 router.post('/:alertId/acknowledge', authenticate, requirePermission('alerts.acknowledge'), async (req, res) => {
   try {
     const { notes } = req.body;
+    const alertId = req.params.alertId;
+    const userName = req.user.name || req.user.email || 'Operador SOC';
 
-    // Verificar que la alerta pertenece al scope del usuario antes de confirmar
-    const scopeQuery = await getAlertScope(req.user);
-    const existingAlert = await Alert.findOne({ _id: req.params.alertId, ...scopeQuery });
-    if (!existingAlert) return res.status(404).json({ error: 'Alerta no encontrada o sin acceso' });
+    // 1. Intentar actualizar en colección Alert
+    let alert = await Alert.findById(alertId);
+    if (alert) {
+      alert.acknowledged = true;
+      alert.acknowledgedAt = new Date();
+      alert.acknowledgedBy = req.user.id;
+      alert.acknowledgeNotes = notes || 'Atendido por operador SOC';
+      await alert.save();
+      if (req.io) req.io.emit('alert_acknowledged', { alertId, acknowledgedBy: userName });
+      return res.json({ success: true, message: 'Alerta confirmada como atendida', alert });
+    }
 
-    const alert = await Alert.findByIdAndUpdate(
-      req.params.alertId,
-      { acknowledged: true, acknowledgedBy: req.user.id, acknowledgedAt: new Date(), acknowledgeNotes: notes },
-      { new: true }
-    );
+    // 2. Intentar actualizar en colección PanicAlert
+    let panic = await PanicAlert.findById(alertId);
+    if (panic) {
+      panic.status = 'ACKNOWLEDGED';
+      panic.acknowledgedAt = new Date();
+      panic.acknowledgedBy = userName;
+      panic.notes = notes || 'Atendido por operador SOC';
+      await panic.save();
+      if (req.io) req.io.emit('alert_acknowledged', { alertId, acknowledgedBy: userName });
+      return res.json({ success: true, message: 'Alerta de pánico confirmada como atendida', alert: panic });
+    }
 
-    res.json({ message: 'Alerta confirmada', alert });
+    return res.status(404).json({ error: 'Alerta no encontrada' });
   } catch (error) {
+    console.error('Error POST /alerts/:id/acknowledge:', error);
     res.status(500).json({ error: error.message });
   }
 });
@@ -212,13 +282,26 @@ router.post('/:alertId/acknowledge', authenticate, requirePermission('alerts.ack
 router.post('/acknowledge-all', authenticate, async (req, res) => {
   try {
     const scopeQuery = await getAlertScope(req.user);
-    const result = await Alert.updateMany(
+    const userName = req.user.name || req.user.email || 'Operador SOC';
+
+    const r1 = await Alert.updateMany(
       { ...scopeQuery, acknowledged: false },
       { $set: { acknowledged: true, acknowledgedBy: req.user.id, acknowledgedAt: new Date() } }
     );
+
+    let panicScope = { status: 'ACTIVE' };
+    if (scopeQuery.company) panicScope.company = scopeQuery.company;
+    const r2 = await PanicAlert.updateMany(
+      panicScope,
+      { $set: { status: 'ACKNOWLEDGED', acknowledgedBy: userName, acknowledgedAt: new Date() } }
+    );
+
+    const totalModified = (r1.modifiedCount || 0) + (r2.modifiedCount || 0);
+
     if (req.io) req.io.emit('alerts_acknowledged');
-    res.json({ message: 'Todas las alertas han sido marcadas como atendidas', modifiedCount: result.modifiedCount });
+    res.json({ message: 'Todas las alertas han sido marcadas como atendidas', modifiedCount: totalModified });
   } catch (error) {
+    console.error('Error POST /alerts/acknowledge-all:', error);
     res.status(500).json({ error: error.message });
   }
 });

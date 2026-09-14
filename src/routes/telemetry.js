@@ -5,6 +5,8 @@ import PersonTracker from '../models/PersonTracker.js';
 import User from '../models/User.js';
 import SensorData from '../models/SensorData.js';
 import DeviceCommand from '../models/DeviceCommand.js';
+import Alert from '../models/Alert.js';
+import PanicAlert from '../models/PanicAlert.js';
 import { authenticate } from '../middleware/auth.js';
 import { broadcastVehicleUpdate } from '../socket/index.js';
 import { analyzeVehicle, analyzePerson } from '../services/alertEngine.js';
@@ -211,7 +213,46 @@ async function processTelemetryPoint(point, clientIp, io = null) {
         triggeredAt: pointTime,
         message: alertMsg,
       };
+
+      // Crear documento en PanicAlert
+      PanicAlert.create({
+        source: 'person',
+        person: targetPerson._id,
+        company: targetPerson.company,
+        latitude: lat,
+        longitude: lng,
+        address: targetPerson.location?.address || (lat && lng ? `Ubicación (${lat.toFixed(5)}, ${lng.toFixed(5)})` : 'Sin dirección'),
+        speed,
+        status: 'ACTIVE',
+        triggeredAt: pointTime,
+      }).catch(() => {});
+
+      // Crear documento estándar en Alert
+      Alert.create({
+        personTracker: targetPerson._id,
+        company: targetPerson.company,
+        type: isCrash ? 'accident_detection' : isTamper ? 'security' : 'panic',
+        severity: 'critical',
+        message: `${alertMsg} (${targetPerson.name})`,
+        description: `Dispositivo ${targetPerson.trackerCode || targetPerson.deviceId || 'App Móvil'} reportó alerta crítica.`,
+        location: {
+          latitude: lat,
+          longitude: lng,
+          address: targetPerson.location?.address || 'Ubicación SOS',
+        },
+        triggerValue: true,
+      }).catch(() => {});
+
       analyzePerson(targetPerson, true).catch(() => {});
+
+      if (io) {
+        io.emit('new_alert', {
+          type: isCrash ? 'accident_detection' : isTamper ? 'security' : 'panic',
+          severity: 'critical',
+          message: `${alertMsg} (${targetPerson.name})`,
+          personTracker: targetPerson,
+        });
+      }
     }
 
     await targetPerson.save();
