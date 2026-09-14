@@ -59,27 +59,43 @@ export async function resolveCity(lat, lng) {
   // ── Fallback de alta precisión (sin necesitar API) ─────────────────────────
   // Valparaíso y región (sectores más comunes del sistema)
   if (lat >= -33.10 && lat <= -32.85 && lng >= -71.78 && lng <= -71.42) {
-    // Playa Ancha (al oeste del cerro, acceso desde Av. España)
-    if (lng < -71.645 && lat < -33.04) {
-      return { city: 'Valparaíso', address: `Playa Ancha, Valparaíso (${lat.toFixed(4)}, ${lng.toFixed(4)})` };
+    // Granito / Camino La Pólvora (al sur/oeste de Valparaíso)
+    if (lat <= -33.050 && lng <= -71.645) {
+      return { city: 'Valparaíso', address: `Granito / Camino La Pólvora, Valparaíso` };
     }
-    // Cerro Alegre / Concepción / centro histórico
-    if (lng >= -71.635 && lng <= -71.61 && lat >= -33.05 && lat <= -33.035) {
-      return { city: 'Valparaíso', address: `Centro/Puerto, Valparaíso` };
+    // Playa Ancha / Patricio Lynch
+    if (lat >= -33.06 && lat <= -33.01 && lng >= -71.68 && lng <= -71.625) {
+      return { city: 'Valparaíso', address: `Playa Ancha / Patricio Lynch, Valparaíso` };
     }
-    // Cerro Placeres / USM
-    if (lng >= -71.615 && lng <= -71.585) {
-      return { city: 'Valparaíso', address: `Cerro Placeres, Valparaíso` };
+    // Cerro Alegre / Concepción / Centro histórico / Almendral
+    if (lng >= -71.635 && lng <= -71.61 && lat >= -33.06 && lat <= -33.03) {
+      return { city: 'Valparaíso', address: `Centro / Almendral, Valparaíso` };
     }
-    // Viña del Mar
-    if (lng > -71.57) {
+    // Cerro Barón / Rodelillo
+    if (lat >= -33.06 && lat <= -33.03 && lng >= -71.615 && lng <= -71.58) {
+      return { city: 'Valparaíso', address: `Cerro Barón / Rodelillo, Valparaíso` };
+    }
+    // Cerro Placeres / USM / Esperanza
+    if (lat >= -33.06 && lat <= -33.03 && lng >= -71.60 && lng <= -71.57) {
+      return { city: 'Valparaíso', address: `Cerro Placeres / Esperanza, Valparaíso` };
+    }
+    // Plaza Viña / 1 Norte
+    if (lat >= -33.035 && lat <= -33.01 && lng >= -71.56 && lng <= -71.52) {
+      return { city: 'Viña del Mar', address: `Plaza Viña / 1 Norte, Viña del Mar` };
+    }
+    // Reñaca / Concón
+    if (lat >= -32.98 && lat <= -32.90 && lng >= -71.56 && lng <= -71.50) {
+      return { city: 'Viña del Mar', address: `Reñaca / Concón, Región de Valparaíso` };
+    }
+    // Viña del Mar general
+    if (lng > -71.58) {
       return { city: 'Viña del Mar', address: `Viña del Mar, Región de Valparaíso` };
     }
     // Quilpué / Villa Alemana
-    if (lat > -33.05 && lng > -71.45) {
+    if (lat >= -33.07 && lat <= -33.02 && lng >= -71.48 && lng <= -71.35) {
       return { city: 'Quilpué', address: `Quilpué, Región de Valparaíso` };
     }
-    return { city: 'Valparaíso', address: `Valparaíso, Chile (${lat.toFixed(4)}, ${lng.toFixed(4)})` };
+    return { city: 'Valparaíso', address: `Valparaíso (${lat.toFixed(4)}, ${lng.toFixed(4)})` };
   }
   // Santiago RM
   if (lat >= -33.75 && lat <= -33.20 && lng >= -70.85 && lng <= -70.35) {

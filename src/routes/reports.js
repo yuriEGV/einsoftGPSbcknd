@@ -106,13 +106,23 @@ router.get('/export/pdf/:vehicleId', authenticate, requireRole('admin', 'fleet_m
 
 // Helper para resolver nombre de sector/ciudad chilena cuando no hay dirección inversa en el punto
 function resolveSectorName(lat, lng, rawAddress) {
-  if (rawAddress && rawAddress !== 'Coordenadas desde Celular' && rawAddress !== 'Esperando señal GPS...' && rawAddress !== 'Ubicación reportada' && rawAddress !== 'Ubicación actual') {
+  if (
+    rawAddress &&
+    !rawAddress.includes('(-33.') &&
+    !rawAddress.includes('(-22.') &&
+    !rawAddress.includes('Valparaíso, Chile (-') &&
+    rawAddress !== 'Coordenadas desde Celular' &&
+    rawAddress !== 'Esperando señal GPS...' &&
+    rawAddress !== 'Ubicación reportada' &&
+    rawAddress !== 'Ubicación actual'
+  ) {
     return rawAddress;
   }
   if (!lat || !lng) return 'Sin coordenadas';
+
   // Viña del Mar
   if (lat >= -33.05 && lat <= -32.95 && lng >= -71.58 && lng <= -71.49) {
-    if (lat >= -33.03 && lat <= -33.01 && lng >= -71.56 && lng <= -71.52) {
+    if (lat >= -33.035 && lat <= -33.01 && lng >= -71.56 && lng <= -71.52) {
       return 'Plaza Viña / 1 Norte, Viña del Mar';
     }
     return 'Viña del Mar, Región de Valparaíso';
@@ -121,11 +131,15 @@ function resolveSectorName(lat, lng, rawAddress) {
   if (lat >= -32.98 && lat <= -32.90 && lng >= -71.56 && lng <= -71.50) {
     return 'Reñaca / Concón, Región de Valparaíso';
   }
+  // Valparaíso: Granito / Camino La Pólvora
+  if (lat <= -33.050 && lng <= -71.645) {
+    return 'Granito / Camino La Pólvora, Valparaíso';
+  }
   // Valparaíso: Cerro Placeres / Esperanza
   if (lat >= -33.06 && lat <= -33.03 && lng >= -71.60 && lng <= -71.57) {
     return 'Cerro Placeres / Esperanza, Valparaíso';
   }
-  // Valparaíso: Cerro Rodelillo / Barón
+  // Valparaíso: Cerro Barón / Rodelillo
   if (lat >= -33.06 && lat <= -33.03 && lng >= -71.615 && lng <= -71.58) {
     return 'Cerro Barón / Rodelillo, Valparaíso';
   }
@@ -133,9 +147,9 @@ function resolveSectorName(lat, lng, rawAddress) {
   if (lat >= -33.06 && lat <= -33.03 && lng >= -71.635 && lng <= -71.61) {
     return 'Centro / Almendral, Valparaíso';
   }
-  // Valparaíso: Playa Ancha
-  if (lat >= -33.06 && lat <= -33.01 && lng >= -71.68 && lng <= -71.635) {
-    return 'Playa Ancha, Valparaíso';
+  // Valparaíso: Playa Ancha / Patricio Lynch
+  if (lat >= -33.06 && lat <= -33.01 && lng >= -71.68 && lng <= -71.625) {
+    return 'Playa Ancha / Patricio Lynch, Valparaíso';
   }
   // Quilpué / Villa Alemana
   if (lat >= -33.07 && lat <= -33.02 && lng >= -71.48 && lng <= -71.35) {
@@ -145,13 +159,13 @@ function resolveSectorName(lat, lng, rawAddress) {
   if (lat >= -33.70 && lat <= -33.25 && lng >= -70.85 && lng <= -70.40) {
     return 'Santiago, Región Metropolitana';
   }
-  return `Ubicación (${lat.toFixed(5)}, ${lng.toFixed(5)})`;
+  return `Valparaíso (${lat.toFixed(4)}, ${lng.toFixed(4)})`;
 }
 
 // ─── GET /reports/route-history — Historial de rutas y playback para vehículos y celulares ──
 router.get('/route-history', authenticate, async (req, res) => {
   try {
-    const { targetType = 'vehicle', targetId, startDate, endDate, limit = 2000 } = req.query;
+    const { targetType = 'vehicle', targetId, startDate, endDate, limit = 5000 } = req.query;
 
     if (!targetId) {
       return res.status(400).json({ error: 'targetId es requerido.' });
@@ -301,7 +315,7 @@ router.get('/route-history', authenticate, async (req, res) => {
             altitude: Math.round(s.gps?.altitude || 0),
             fuel: null,
             battery: s.battery?.level != null ? s.battery.level : person.batteryLevel || 100,
-            address: resolveSectorName(lat, lng, s.gps?.address || s.location?.address || person.location?.address),
+            address: resolveSectorName(lat, lng, s.gps?.address || s.location?.address),
             timestamp: s.timestamp,
           };
         })
@@ -325,7 +339,7 @@ router.get('/route-history', authenticate, async (req, res) => {
       }
     }
 
-    // Comprimir puntos idénticos detenidos para aligerar la ruta
+    // Comprimir puntos idénticos detenidos para aligerar la ruta sin perder lugares ni saltos de tiempo
     const compressedWaypoints = [];
     for (let i = 0; i < waypoints.length; i++) {
       const w = waypoints[i];
@@ -333,8 +347,10 @@ router.get('/route-history', authenticate, async (req, res) => {
         const last = compressedWaypoints[compressedWaypoints.length - 1];
         const dLat = Math.abs(w.lat - last.lat);
         const dLng = Math.abs(w.lng - last.lng);
-        const isStatic = w.speed === 0 && last.speed === 0;
-        if (isStatic && dLat < 0.00015 && dLng < 0.00015 && i < waypoints.length - 1) {
+        const timeDiffSec = (new Date(w.timestamp).getTime() - new Date(last.timestamp).getTime()) / 1000;
+        const isStatic = (w.speed <= 1 && last.speed <= 1) || (dLat < 0.00015 && dLng < 0.00015);
+        // Omitir solo si está detenido en el mismo sitio y dentro de los últimos 5 minutos
+        if (isStatic && dLat < 0.0002 && dLng < 0.0002 && timeDiffSec < 300 && i < waypoints.length - 1) {
           continue;
         }
       }
